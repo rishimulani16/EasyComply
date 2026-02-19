@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/* ── Global base reset ── */
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
