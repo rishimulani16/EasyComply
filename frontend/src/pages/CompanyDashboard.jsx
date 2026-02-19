@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axiosInstance';
 import UploadModal from '../components/UploadModal';
+import MarkDoneModal from '../components/MarkDoneModal';
 
 // ── Status badge ──────────────────────────────────────────────────────────
 function StatusBadge({ status }) {
@@ -68,6 +69,7 @@ export default function CompanyDashboard() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [uploadModal, setUploadModal] = useState({ open: false, calendarId: null, ruleName: '' });
+    const [markDoneModal, setMarkDoneModal] = useState({ open: false, calendarId: null, ruleName: '' });
     const [actionError, setActionError] = useState('');
 
     const fetchDashboard = useCallback(() => {
@@ -79,16 +81,6 @@ export default function CompanyDashboard() {
     }, []);
 
     useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
-
-    const handleMarkDone = async (calendarId) => {
-        setActionError('');
-        try {
-            await api.patch(`/compliance/markdone/${calendarId}`);
-            fetchDashboard();
-        } catch (err) {
-            setActionError(err.response?.data?.detail ?? 'Could not mark as done.');
-        }
-    };
 
     const handleLogout = () => {
         localStorage.removeItem('token');
@@ -245,7 +237,7 @@ export default function CompanyDashboard() {
                                                         </button>
                                                     ) : (
                                                         <button
-                                                            onClick={() => handleMarkDone(row.calendar_id)}
+                                                            onClick={() => setMarkDoneModal({ open: true, calendarId: row.calendar_id, ruleName: row.rule_name })}
                                                             className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-600/50
                                 text-emerald-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
                                                         >
@@ -274,6 +266,19 @@ export default function CompanyDashboard() {
                     onClose={() => setUploadModal({ open: false, calendarId: null, ruleName: '' })}
                     onSuccess={() => {
                         setUploadModal({ open: false, calendarId: null, ruleName: '' });
+                        fetchDashboard();
+                    }}
+                />
+            )}
+
+            {/* Mark Done modal */}
+            {markDoneModal.open && (
+                <MarkDoneModal
+                    calendarId={markDoneModal.calendarId}
+                    ruleName={markDoneModal.ruleName}
+                    onClose={() => setMarkDoneModal({ open: false, calendarId: null, ruleName: '' })}
+                    onSuccess={() => {
+                        setMarkDoneModal({ open: false, calendarId: null, ruleName: '' });
                         fetchDashboard();
                     }}
                 />

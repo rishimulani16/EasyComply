@@ -127,8 +127,13 @@ def add_rule(
 ):
     """
     Creates a new compliance rule and writes an ADD entry to audit_log.
+    Also auto-assigns the rule to all existing companies that match its criteria.
     Developer role required.
     """
+    from datetime import date
+    from dateutil.relativedelta import relativedelta
+    from models.models import Company, ComplianceCalendar
+
     # 1. Create ORM object
     rule = ComplianceRule(
         rule_name=body.rule_name,
@@ -160,6 +165,70 @@ def add_rule(
 
     db.commit()
     db.refresh(rule)
+
+    # ------------------------------------------------------------------
+    # 3. Auto-assign to existing companies that match this new rule
+    # ------------------------------------------------------------------
+    if body.is_active:
+        today = date.today()
+        companies = db.query(Company).all()
+
+        calendar_rows = []
+        for company in companies:
+            industries   = company.industry_type  or []
+            hq_state     = company.hq_state       or ""
+            comp_types   = company.company_type   or []
+            emp_count    = company.employee_count or 0
+            subscription = company.subscription   or "Basic"
+
+            # Build states to match
+            branches = company.branch_states or []
+            if subscription == "Enterprise":
+                states = list(dict.fromkeys([hq_state] + branches))
+            else:
+                states = [hq_state]
+
+            # Check if company already has this rule in calendar
+            already_exists = db.query(ComplianceCalendar).filter(
+                ComplianceCalendar.company_id == company.company_id,
+                ComplianceCalendar.rule_id == rule.rule_id,
+            ).first()
+            if already_exists:
+                continue
+
+            # Check employee range
+            if not (rule.min_employees <= emp_count <= rule.max_employees):
+                continue
+
+            # Check industry match (ALL means universal)
+            rule_industries = rule.industry_type or []
+            if "ALL" not in rule_industries and not any(i in rule_industries for i in industries):
+                continue
+
+            # Check state match
+            rule_states = rule.applicable_states or []
+            if "ALL" not in rule_states and not any(s in rule_states for s in states):
+                continue
+
+            # Check company type match
+            rule_types = rule.company_type or []
+            if "ALL" not in rule_types and not any(t in rule_types for t in comp_types):
+                continue
+
+            # Matched — create a PENDING calendar row
+            calendar_rows.append(ComplianceCalendar(
+                company_id=company.company_id,
+                rule_id=rule.rule_id,
+                branch_state=None,
+                due_date=today + relativedelta(months=int(rule.frequency_months)),
+                status="PENDING",
+                ocr_verified=False,
+            ))
+
+        if calendar_rows:
+            db.add_all(calendar_rows)
+            db.commit()
+
     return rule
 
 

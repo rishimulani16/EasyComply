@@ -359,18 +359,39 @@ def upload_document(
 # For rules where document_required = FALSE — no OCR needed.
 # ---------------------------------------------------------------------------
 
+from typing import Optional
+from pydantic import BaseModel
+
+class MarkDoneRequest(BaseModel):
+    note: Optional[str] = None              # free-text compliance note / reference
+    renewal_date: Optional[date] = None     # date the certificate/compliance was renewed
+    expiry_date: Optional[date] = None      # expiry date; None = permanent (no expiry)
+
+
 @router.patch(
     "/compliance/markdone/{calendar_id}",
-    summary="Mark a non-document rule as COMPLETED",
+    summary="Mark a non-document rule as COMPLETED with note, renewal date, and optional expiry date",
 )
 def mark_done(
     calendar_id: int,
+    body: MarkDoneRequest = MarkDoneRequest(),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_company),
 ):
     """
-    Marks a compliance calendar entry as COMPLETED without requiring a document upload.
+    Marks a compliance calendar entry as COMPLETED without a document upload.
     Only valid for rules where document_required = FALSE.
+
+    **Body fields:**
+    - `note`         — free-text compliance note / reference number
+    - `renewal_date` — date the certificate or action was renewed/completed
+    - `expiry_date`  — expiry date of the compliance; omit or set null for permanent/no expiry
+
+    **next_due_date logic:**
+    - If `expiry_date` is provided → anchor = expiry_date
+    - Else if `renewal_date` is provided → anchor = renewal_date
+    - Else → anchor = today
+
     Company Admin role required.
     """
     calendar: ComplianceCalendar | None = (
@@ -403,10 +424,29 @@ def mark_done(
     today = date.today()
     freq_months = rule.frequency_months if rule else 12
 
+    # Determine next_due_date anchor:
+    #   Priority: expiry_date > renewal_date > today
+    # If permanent (no expiry_date), still use renewal_date/today as anchor for next renewal reminder.
+    if body.expiry_date:
+        anchor = body.expiry_date
+    elif body.renewal_date:
+        anchor = body.renewal_date
+    else:
+        anchor = today
+
+    next_due = anchor + relativedelta(months=freq_months)
+
+    # Build ocr_result note
+    note_text    = body.note.strip() if body.note else ""
+    renewal_text = f" | Renewed on: {body.renewal_date.isoformat()}" if body.renewal_date else ""
+    expiry_text  = f" | Expiry date: {body.expiry_date.isoformat()}" if body.expiry_date else " | Permanent (no expiry)"
+    ocr_result   = f"Manually marked done.{(' Note: ' + note_text) if note_text else ''}{renewal_text}{expiry_text}"
+
     calendar.status        = "COMPLETED"
     calendar.ocr_verified  = False
+    calendar.ocr_result    = ocr_result
     calendar.verified_at   = datetime.now(timezone.utc)
-    calendar.next_due_date = today + relativedelta(months=freq_months)
+    calendar.next_due_date = next_due
 
     db.commit()
 
@@ -414,5 +454,9 @@ def mark_done(
         "status":        "COMPLETED",
         "calendar_id":   calendar_id,
         "next_due_date": calendar.next_due_date.isoformat() if calendar.next_due_date else None,
+        "renewal_date":  body.renewal_date.isoformat() if body.renewal_date else None,
+        "expiry_date":   body.expiry_date.isoformat() if body.expiry_date else None,
+        "permanent":     body.expiry_date is None,
+        "note":          note_text or None,
     }
 
