@@ -1,0 +1,3 @@
+# uploads/
+# Uploaded compliance documents are stored here locally during MVP.
+# In production this will be replaced by S3/Cloudinary.

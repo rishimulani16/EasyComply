@@ -4,7 +4,7 @@ Company Admin panel routes.
 
 Endpoints:
     POST /company/signup    — register company, auto-match rules, populate calendar
-    GET  /company/dashboard — list this company's compliance calendar entries
+    GET  /company/dashboard — see routers/compliance.py (enriched version with join + auto-OVERDUE)
 """
 
 import os
@@ -21,8 +21,6 @@ from sqlalchemy.orm import Session
 from db.database import get_db
 from models.models import Company, ComplianceCalendar, User
 from models.schemas import (
-    CompanyCreate,
-    ComplianceCalendarOut,
     SignupRequest,
     SignupResponse,
 )
@@ -203,28 +201,5 @@ def company_signup(body: SignupRequest, db: Session = Depends(get_db)):
     )
 
 
-# ---------------------------------------------------------------------------
-# GET /company/dashboard
-# ---------------------------------------------------------------------------
-
-@router.get(
-    "/dashboard",
-    response_model=list[ComplianceCalendarOut],
-    summary="Get compliance calendar for the authenticated company",
-)
-def company_dashboard(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(require_company),
-):
-    """
-    Returns all compliance calendar entries for the logged-in company,
-    sorted by nearest due_date first.
-    Company Admin role required.
-    """
-    entries = (
-        db.query(ComplianceCalendar)
-        .filter(ComplianceCalendar.company_id == current_user["company_id"])
-        .order_by(ComplianceCalendar.due_date.asc())
-        .all()
-    )
-    return entries
+# GET /company/dashboard is implemented in routers/compliance.py
+# with full join query, auto-OVERDUE logic, and summary counts.
