@@ -303,3 +303,67 @@ def upload_document(
         "keywords_found":   found,
         "keywords_missing": missing,
     }
+
+
+# ---------------------------------------------------------------------------
+# PATCH /compliance/markdone/{calendar_id}
+# For rules where document_required = FALSE — no OCR needed.
+# ---------------------------------------------------------------------------
+
+@router.patch(
+    "/compliance/markdone/{calendar_id}",
+    summary="Mark a non-document rule as COMPLETED",
+)
+def mark_done(
+    calendar_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_company),
+):
+    """
+    Marks a compliance calendar entry as COMPLETED without requiring a document upload.
+    Only valid for rules where document_required = FALSE.
+    Company Admin role required.
+    """
+    calendar: ComplianceCalendar | None = (
+        db.query(ComplianceCalendar)
+        .filter(ComplianceCalendar.calendar_id == calendar_id)
+        .first()
+    )
+
+    if not calendar:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Calendar entry {calendar_id} not found.",
+        )
+    if calendar.company_id != current_user["company_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorised to update this entry.",
+        )
+
+    # Guard: don't allow shortcut for document-required rules
+    rule = db.query(ComplianceRule).filter(
+        ComplianceRule.rule_id == calendar.rule_id
+    ).first()
+    if rule and rule.document_required:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This rule requires a document upload. Use /compliance/upload instead.",
+        )
+
+    today = date.today()
+    freq_months = rule.frequency_months if rule else 12
+
+    calendar.status        = "COMPLETED"
+    calendar.ocr_verified  = False
+    calendar.verified_at   = datetime.now(timezone.utc)
+    calendar.next_due_date = today + relativedelta(months=freq_months)
+
+    db.commit()
+
+    return {
+        "status":        "COMPLETED",
+        "calendar_id":   calendar_id,
+        "next_due_date": calendar.next_due_date,
+    }
+
