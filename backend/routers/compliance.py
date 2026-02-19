@@ -19,7 +19,7 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from db.database import get_db
-from models.models import ComplianceCalendar, ComplianceRule
+from models.models import Company, ComplianceCalendar, ComplianceRule
 from routers.deps import require_company
 
 router = APIRouter(tags=["Compliance"])
@@ -27,16 +27,6 @@ router = APIRouter(tags=["Compliance"])
 # Folder where uploaded documents are stored locally
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-# Keywords the OCR result is checked against (all lowercase for comparison)
-OCR_KEYWORDS = [
-    "user consent",
-    "data protection",
-    "grievance officer",
-    "privacy policy",
-    "valid until",
-    "effective date",
-]
 
 # Regex patterns to extract dates from OCR text
 DATE_PATTERNS = [
@@ -187,9 +177,14 @@ def company_dashboard(
 # POST /compliance/upload/{calendar_id}
 # ---------------------------------------------------------------------------
 
+
+# ---------------------------------------------------------------------------
+# POST /compliance/upload/{calendar_id}
+# ---------------------------------------------------------------------------
+
 @router.post(
     "/compliance/upload/{calendar_id}",
-    summary="Upload a compliance document and run Tesseract OCR verification",
+    summary="Upload a compliance document and run date-based OCR verification",
 )
 def upload_document(
     calendar_id: int,
@@ -198,18 +193,21 @@ def upload_document(
     current_user: dict = Depends(require_company),
 ):
     """
-    Accepts a PDF or image, runs Tesseract OCR, checks for required keywords,
-    extracts a renewal date, and updates the compliance_calendar row.
+    Date-based Verification Logic:
+    1. Extract text via Tesseract OCR.
+    2. Extract **Dates** — issue dates (<= today) and expiry dates (> today).
+    3. Optionally check for the **Company Name** (reported but does not affect pass/fail).
 
-    **OCR pass condition**: ≥ 3 of 6 keywords found in the extracted text.
+    **Pass Condition**:
+    - At least one valid date found (issue date OR expiry date).
 
-    **Status outcomes:**
-    - `COMPLETED`   — keywords found + uploaded before due_date
-    - `OVERDUE-PASS`— keywords found + uploaded after due_date
-    - `FAILED`      — fewer than 3 keywords found (re-upload required)
+    **Status Outcomes**:
+    - `COMPLETED`    : Pass condition met + uploaded before due_date.
+    - `OVERDUE-PASS` : Pass condition met + uploaded after due_date.
+    - `FAILED`       : No dates found in the document.
     """
     # ------------------------------------------------------------------
-    # Step 5 — Fetch calendar row and validate ownership
+    # Fetch calendar and company details
     # ------------------------------------------------------------------
     calendar: ComplianceCalendar | None = (
         db.query(ComplianceCalendar)
@@ -227,6 +225,10 @@ def upload_document(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to upload for this calendar entry.",
         )
+
+    # Fetch company name (checked optionally — does not affect pass/fail)
+    company = db.query(Company).filter(Company.company_id == current_user["company_id"]).first()
+    company_name_clean = re.sub(r'[^a-zA-Z0-9]', '', company.company_name.lower()) if company else ""
 
     # Validate file type
     allowed_types = {"application/pdf", "image/png", "image/jpeg", "image/tiff", "image/bmp"}
@@ -250,50 +252,93 @@ def upload_document(
     # Step 2 — Extract text using Tesseract OCR
     # ------------------------------------------------------------------
     extracted_text = _extract_text_from_file(file_path, file.content_type)
-
-    # ------------------------------------------------------------------
-    # Step 3 — Keyword check
-    # ------------------------------------------------------------------
     lower_text = extracted_text.lower()
-    found   = [k for k in OCR_KEYWORDS if k in lower_text]
-    missing = [k for k in OCR_KEYWORDS if k not in lower_text]
+    clean_text = re.sub(r'[^a-zA-Z0-9]', '', lower_text)
 
     # ------------------------------------------------------------------
-    # Step 4 — Extract renewal date from OCR text
+    # Step 3 — Date Extraction (primary check)
+    # We look for common date formats: DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY, DD Mon YYYY
     # ------------------------------------------------------------------
-    renewal_date = _extract_date_from_text(extracted_text)
+    date_patterns = [
+        r"\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b",           # DD/MM/YYYY or DD-MM-YYYY
+        r"\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b",             # YYYY-MM-DD
+        r"\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{2,4})\b", # DD Mon YYYY
+    ]
+
+    found_dates = []
+    for pat in date_patterns:
+        matches = re.findall(pat, extracted_text, re.IGNORECASE)
+        for m in matches:
+            ds = " ".join(m) if isinstance(m, tuple) else m
+            try:
+                from dateutil import parser
+                d = parser.parse(ds, dayfirst=True).date()
+                found_dates.append(d)
+            except Exception:
+                pass
+
+    found_dates = sorted(list(set(found_dates)))  # Deduplicate and sort
     today = date.today()
 
-    # ------------------------------------------------------------------
-    # Step 6 — Determine status, compute next_due, and persist
-    # ------------------------------------------------------------------
-    if len(found) >= 3:
-        # Look up frequency from the linked rule
-        rule = db.query(ComplianceRule).filter(
-            ComplianceRule.rule_id == calendar.rule_id
-        ).first()
-        freq_months = rule.frequency_months if rule else 12
-        next_due = renewal_date + relativedelta(months=freq_months)
+    expiry_dates = [d for d in found_dates if d > today]   # future dates = expiry
+    issue_dates  = [d for d in found_dates if d <= today]  # past/today dates = issue
 
+    # ------------------------------------------------------------------
+    # Step 4 — Company Name Check (informational only)
+    # ------------------------------------------------------------------
+    name_found = bool(company_name_clean and company_name_clean in clean_text)
+
+    # ------------------------------------------------------------------
+    # Step 5 — Determine verification status
+    # Pass condition: at least one date (issue OR expiry) must be present.
+    # Company name is reported but does NOT affect pass/fail.
+    # ------------------------------------------------------------------
+    if found_dates:
+        # Determine COMPLETED vs OVERDUE-PASS
         if calendar.due_date and calendar.due_date < today:
             final_status = "OVERDUE-PASS"
         else:
             final_status = "COMPLETED"
 
         ocr_verified = True
-        ocr_result = f"Verified. Found keywords: {found}"
+
+        # Pick anchor for next_due_date:
+        # Prefer furthest expiry date; fall back to latest issue date.
+        rule = db.query(ComplianceRule).filter(ComplianceRule.rule_id == calendar.rule_id).first()
+        freq_months = rule.frequency_months if rule else 12
+
+        if expiry_dates:
+            anchor_date = expiry_dates[-1]   # furthest future date
+        else:
+            anchor_date = issue_dates[-1]    # most recent issue date
+
+        next_due = anchor_date + relativedelta(months=freq_months)
+
+        company_note = (
+            f" Company '{company.company_name}' found in document."
+            if name_found
+            else f" Company '{company.company_name}' not detected (not required)."
+        ) if company else ""
+
+        ocr_result = (
+            f"Verified. Issue dates: {[d.isoformat() for d in issue_dates]}. "
+            f"Expiry dates: {[d.isoformat() for d in expiry_dates]}.{company_note}"
+        )
+
     else:
         final_status = "FAILED"
         ocr_verified = False
-        ocr_result = f"Missing keywords: {missing}"
         next_due = None
+        ocr_result = "Verification Failed: No valid dates (issue date or expiry date) found in the document."
 
+    # ------------------------------------------------------------------
     # Update calendar row
-    calendar.status       = final_status
-    calendar.document_url = document_url
-    calendar.ocr_verified = ocr_verified
-    calendar.ocr_result   = ocr_result
-    calendar.verified_at  = datetime.now(timezone.utc)
+    # ------------------------------------------------------------------
+    calendar.status        = final_status
+    calendar.document_url  = document_url
+    calendar.ocr_verified  = ocr_verified
+    calendar.ocr_result    = ocr_result
+    calendar.verified_at   = datetime.now(timezone.utc)
     calendar.next_due_date = next_due
 
     db.commit()
@@ -302,9 +347,11 @@ def upload_document(
         "status":        final_status,
         "ocr_result":    ocr_result,
         "next_due_date": next_due,
-        "keywords_found":   found,
-        "keywords_missing": missing,
+        "issue_dates":   [d.isoformat() for d in issue_dates],
+        "expiry_dates":  [d.isoformat() for d in expiry_dates],
+        "company_found": name_found,
     }
+
 
 
 # ---------------------------------------------------------------------------
