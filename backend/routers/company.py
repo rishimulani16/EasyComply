@@ -54,17 +54,54 @@ def _create_access_token(payload: dict) -> str:
 # SQLAlchemy ORM, so executed via db.execute() with text() + bound params.
 # ---------------------------------------------------------------------------
 
-AUTO_MATCH_SQL = text("""
-    SELECT rule_id, rule_name, frequency_months, document_required
-    FROM compliance_rules
-    WHERE
-        (industry_type && :industries::TEXT[] OR 'ALL' = ANY(industry_type))
-        AND (applicable_states && :states::TEXT[] OR 'ALL' = ANY(applicable_states))
-        AND (company_type && :comp_types::TEXT[] OR 'ALL' = ANY(company_type))
-        AND min_employees <= :emp_count
-        AND max_employees >= :emp_count
-        AND is_active = TRUE
-""")
+
+# ---------------------------------------------------------------------------
+# Auto-match via SQLAlchemy ORM (avoids psycopg2 ::TEXT[] cast conflict)
+# We use Python-level overlap check via the ARRAY column's .overlap() method.
+# ---------------------------------------------------------------------------
+
+def _match_rules(db: Session, industries: list, states: list, comp_types: list, emp_count: int):
+    """
+    Return all active ComplianceRule rows that match the company profile.
+    Uses a raw psycopg2 cursor via the SQLAlchemy engine connection pool
+    so we can pass arrays as Python lists — psycopg2 adapts them natively
+    to {val1,val2,...} which compares correctly against TEXT[] columns.
+    """
+    from models.models import ComplianceRule
+
+    SQL = """
+        SELECT rule_id FROM compliance_rules
+        WHERE
+            is_active = TRUE
+            AND min_employees <= %(emp)s
+            AND max_employees >= %(emp)s
+            AND (industry_type && %(industries)s OR 'ALL' = ANY(industry_type))
+            AND (applicable_states && %(states)s OR 'ALL' = ANY(applicable_states))
+            AND (company_type && %(comp_types)s OR 'ALL' = ANY(company_type))
+    """
+
+    # Get a raw psycopg2 connection from the SQLAlchemy pool
+    raw_conn = db.get_bind().raw_connection()
+    try:
+        cur = raw_conn.cursor()
+        cur.execute(SQL, {
+            "emp":        emp_count,
+            "industries": industries,
+            "states":     states,
+            "comp_types": comp_types,
+        })
+        ids = [row[0] for row in cur.fetchall()]
+        cur.close()
+    finally:
+        raw_conn.close()
+
+    if not ids:
+        return []
+    return db.query(ComplianceRule).filter(ComplianceRule.rule_id.in_(ids)).all()
+
+
+
+
 
 
 
@@ -139,26 +176,17 @@ def company_signup(body: SignupRequest, db: Session = Depends(get_db)):
         states_to_match = list(dict.fromkeys([body.hq_state] + branch))
 
     # ------------------------------------------------------------------
-    # Step 4 — Auto-matching query (raw SQL via text())
-    # PostgreSQL array literals must be passed as "{val1,val2,...}" strings
+    # Step 4 — Auto-matching via ORM (avoids psycopg2 ::TEXT[] cast bug)
     # ------------------------------------------------------------------
     emp_count = body.employee_count if body.employee_count is not None else 0
 
-    def _pg_array(lst: list) -> str:
-        """Convert a Python list to a PostgreSQL array literal string."""
-        escaped = [str(v).replace('"', '') for v in lst]
-        return "{" + ",".join(escaped) + "}"
-
-    result = db.execute(
-        AUTO_MATCH_SQL,
-        {
-            "industries":  _pg_array(body.industry_type),
-            "states":      _pg_array(states_to_match),
-            "comp_types":  _pg_array(body.company_type),
-            "emp_count":   emp_count,
-        },
+    matched_rules = _match_rules(
+        db,
+        industries=body.industry_type,
+        states=states_to_match,
+        comp_types=body.company_type,
+        emp_count=emp_count,
     )
-    matched_rules = result.mappings().all()
 
     # ------------------------------------------------------------------
     # Step 5 — Bulk-insert ComplianceCalendar rows
@@ -167,14 +195,15 @@ def company_signup(body: SignupRequest, db: Session = Depends(get_db)):
     calendar_rows = [
         ComplianceCalendar(
             company_id=company.company_id,
-            rule_id=rule["rule_id"],
-            branch_state=None,          # populated at branch level for Enterprise in future
-            due_date=today + relativedelta(months=int(rule["frequency_months"])),
+            rule_id=rule.rule_id,
+            branch_state=None,
+            due_date=today + relativedelta(months=int(rule.frequency_months)),
             status="PENDING",
             ocr_verified=False,
         )
         for rule in matched_rules
     ]
+
 
     if calendar_rows:
         db.add_all(calendar_rows)
