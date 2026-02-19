@@ -151,13 +151,15 @@ def company_dashboard(
             "calendar_id":   cal.calendar_id,
             "rule_id":       cal.rule_id,
             "branch_state":  cal.branch_state,
-            "due_date":      cal.due_date,
+            # Serialise dates as plain ISO strings so the frontend parses
+            # them as local dates (avoids UTC-midnight off-by-one in IST)
+            "due_date":      cal.due_date.isoformat() if cal.due_date else None,
             "status":        cal.status,
             "document_url":  cal.document_url,
             "ocr_verified":  cal.ocr_verified,
             "ocr_result":    cal.ocr_result,
-            "verified_at":   cal.verified_at,
-            "next_due_date": cal.next_due_date,
+            "verified_at":   cal.verified_at.isoformat() if cal.verified_at else None,
+            "next_due_date": cal.next_due_date.isoformat() if cal.next_due_date else None,
             # Joined rule details
             "rule_name":         rule.rule_name,
             "frequency_months":  rule.frequency_months,
@@ -364,6 +366,6 @@ def mark_done(
     return {
         "status":        "COMPLETED",
         "calendar_id":   calendar_id,
-        "next_due_date": calendar.next_due_date,
+        "next_due_date": calendar.next_due_date.isoformat() if calendar.next_due_date else None,
     }
 

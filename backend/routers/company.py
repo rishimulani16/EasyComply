@@ -58,12 +58,14 @@ AUTO_MATCH_SQL = text("""
     SELECT rule_id, rule_name, frequency_months, document_required
     FROM compliance_rules
     WHERE
-        (industry_type && CAST(:industries AS TEXT[]) OR industry_type = ARRAY['ALL'])
-        AND (applicable_states && CAST(:states AS TEXT[]) OR applicable_states = ARRAY['ALL'])
-        AND (company_type && CAST(:comp_types AS TEXT[]) OR company_type = ARRAY['ALL'])
-        AND (min_employees <= :emp_count AND max_employees >= :emp_count)
+        (industry_type && :industries::TEXT[] OR 'ALL' = ANY(industry_type))
+        AND (applicable_states && :states::TEXT[] OR 'ALL' = ANY(applicable_states))
+        AND (company_type && :comp_types::TEXT[] OR 'ALL' = ANY(company_type))
+        AND min_employees <= :emp_count
+        AND max_employees >= :emp_count
         AND is_active = TRUE
 """)
+
 
 
 # ---------------------------------------------------------------------------

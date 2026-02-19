@@ -31,6 +31,22 @@ function StatusBadge({ status }) {
 // ── Frequency label ──────────────────────────────────────────────────────
 const freqLabel = (m) => ({ 1: 'Monthly', 3: 'Quarterly', 6: 'Half-Yearly', 12: 'Annual' }[m] ?? `${m}m`);
 
+// ── Safe local-date parser (avoids UTC-midnight off-by-one in IST +5:30) ──
+// Backend sends plain ISO dates like "2026-03-01". When passed directly to
+// new Date(), JS parses them as UTC midnight, which becomes 23 Feb in IST.
+// Appending T00:00:00 forces local-midnight parsing.
+const formatDate = (isoStr) => {
+    if (!isoStr) return '—';
+    return new Date(isoStr + 'T00:00:00').toLocaleDateString('en-IN');
+};
+
+// Days until a date string (negative = overdue)
+const daysUntil = (isoStr) => {
+    if (!isoStr) return Infinity;
+    const d = new Date(isoStr + 'T00:00:00');
+    return (d - new Date()) / 86400000;
+};
+
 // ── Stat card ──────────────────────────────────────────────────────────────
 function StatCard({ label, value, colorClass, icon }) {
     return (
@@ -170,8 +186,7 @@ export default function CompanyDashboard() {
                                 <tbody className="divide-y divide-slate-700/40">
                                     {rules.map((row) => {
                                         const isOverdue = row.status === 'OVERDUE' || row.status === 'FAILED';
-                                        const isDue7Days = row.due_date && !isOverdue &&
-                                            (new Date(row.due_date) - new Date()) / 86400000 < 7;
+                                        const isDue7Days = row.due_date && !isOverdue && daysUntil(row.due_date) < 7;
 
                                         return (
                                             <tr key={row.calendar_id}
@@ -194,7 +209,7 @@ export default function CompanyDashboard() {
                                                 {/* Due date */}
                                                 <td className="px-5 py-4">
                                                     <span className={`font-medium ${isOverdue ? 'text-red-400' : isDue7Days ? 'text-yellow-400' : 'text-slate-300'}`}>
-                                                        {row.due_date ? new Date(row.due_date).toLocaleDateString('en-IN') : '—'}
+                                                        {formatDate(row.due_date)}
                                                     </span>
                                                 </td>
 
