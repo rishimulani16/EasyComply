@@ -137,6 +137,38 @@ class TokenResponse(BaseModel):
     company_id: Optional[int] = None
 
 
+class SignupRequest(BaseModel):
+    """
+    POST /company/signup — full onboarding payload.
+    Combines company profile fields + admin account credentials.
+    """
+    # Company profile
+    company_name: str
+    industry_type: List[str]
+    company_type: List[str]
+    hq_state: str
+    branch_states: Optional[List[str]] = None   # required for Enterprise
+    employee_count: int
+    subscription: str = Field(description="One of: Basic | Enterprise")
+
+    # Admin account
+    email: EmailStr
+    password: str
+
+
+class SignupResponse(BaseModel):
+    """
+    Returned after successful signup.
+    Company is auto-logged in — no separate login call needed.
+    """
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+    user_id: int
+    company_id: int
+    total_rules_matched: int
+
+
 # ===========================================================================
 # ComplianceCalendar schemas
 # ===========================================================================
