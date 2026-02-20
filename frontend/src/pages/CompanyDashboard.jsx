@@ -221,11 +221,24 @@ export default function CompanyDashboard() {
 
                                                 {/* Action */}
                                                 <td className="px-5 py-4">
-                                                    {row.status === 'COMPLETED' || row.status === 'OVERDUE-PASS' ? (
+                                                    {(row.status === 'COMPLETED' || row.status === 'OVERDUE-PASS') && row.document_required ? (
+                                                        /* Re-upload button for completed document-required rules */
+                                                        <button
+                                                            onClick={() => setUploadModal({ open: true, calendarId: row.calendar_id, ruleName: row.rule_name, isReupload: true })}
+                                                            className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/40 border border-amber-600/50
+                                text-amber-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                            </svg>
+                                                            Re-upload
+                                                        </button>
+                                                    ) : row.status === 'COMPLETED' || row.status === 'OVERDUE-PASS' ? (
                                                         <span className="text-slate-500 text-xs">Done</span>
                                                     ) : row.document_required ? (
                                                         <button
-                                                            onClick={() => setUploadModal({ open: true, calendarId: row.calendar_id, ruleName: row.rule_name })}
+                                                            onClick={() => setUploadModal({ open: true, calendarId: row.calendar_id, ruleName: row.rule_name, isReupload: false })}
                                                             className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-600/50
                                 text-indigo-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
                                                         >
@@ -263,9 +276,10 @@ export default function CompanyDashboard() {
                 <UploadModal
                     calendarId={uploadModal.calendarId}
                     ruleName={uploadModal.ruleName}
-                    onClose={() => setUploadModal({ open: false, calendarId: null, ruleName: '' })}
+                    isReupload={uploadModal.isReupload ?? false}
+                    onClose={() => setUploadModal({ open: false, calendarId: null, ruleName: '', isReupload: false })}
                     onSuccess={() => {
-                        setUploadModal({ open: false, calendarId: null, ruleName: '' });
+                        setUploadModal({ open: false, calendarId: null, ruleName: '', isReupload: false });
                         fetchDashboard();
                     }}
                 />

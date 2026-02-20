@@ -14,7 +14,7 @@ import api from '../api/axiosInstance';
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
 
-export default function UploadModal({ calendarId, ruleName, onClose, onSuccess }) {
+export default function UploadModal({ calendarId, ruleName, isReupload = false, onClose, onSuccess }) {
     const [file, setFile] = useState(null);
     const [fileError, setFileError] = useState('');
     const [loading, setLoading] = useState(false);
@@ -145,7 +145,9 @@ export default function UploadModal({ calendarId, ruleName, onClose, onSuccess }
                 {/* Header */}
                 <div className="flex items-start justify-between px-6 py-5 border-b border-slate-700 gap-4">
                     <div className="min-w-0">
-                        <h2 className="text-base font-bold text-white">Upload Compliance Document</h2>
+                        <h2 className="text-base font-bold text-white">
+                            {isReupload ? 'Re-upload Compliance Document' : 'Upload Compliance Document'}
+                        </h2>
                         <p className="text-xs text-slate-400 mt-0.5 leading-snug line-clamp-2" title={ruleName}>
                             {ruleName}
                         </p>
@@ -162,6 +164,17 @@ export default function UploadModal({ calendarId, ruleName, onClose, onSuccess }
 
                 {/* Body */}
                 <div className="p-6 space-y-5">
+
+                    {/* Re-upload notice banner */}
+                    {isReupload && !result && (
+                        <div className="flex items-start gap-2.5 rounded-xl border border-amber-600/40 bg-amber-900/20 px-4 py-3">
+                            <span className="text-amber-400 text-base mt-0.5">🔄</span>
+                            <p className="text-amber-300 text-xs leading-relaxed">
+                                You are re-uploading a document for a <span className="font-semibold">completed</span> rule.
+                                The <span className="font-semibold">Due Date</span> will be updated based on the new document's dates.
+                            </p>
+                        </div>
+                    )}
 
                     {/* File picker — always visible so user can re-upload if FAILED */}
                     {!result || result.status === 'FAILED' ? (

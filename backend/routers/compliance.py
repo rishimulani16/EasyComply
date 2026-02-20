@@ -333,9 +333,14 @@ def upload_document(
 
     # ------------------------------------------------------------------
     # Update calendar row
+    # Re-uploads are fully supported: status, due_date, and next_due_date
+    # are all refreshed based on the newly submitted document.
     # ------------------------------------------------------------------
     calendar.status        = final_status
     calendar.document_url  = document_url
+    # Roll due_date forward only on a passing upload (COMPLETED / OVERDUE-PASS)
+    if next_due is not None:
+        calendar.due_date = next_due
     calendar.ocr_verified  = ocr_verified
     calendar.ocr_result    = ocr_result
     calendar.verified_at   = datetime.now(timezone.utc)
