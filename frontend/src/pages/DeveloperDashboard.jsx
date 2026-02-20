@@ -124,7 +124,7 @@ function ManageRulesTab() {
 
     const fetchRules = useCallback(() => {
         setLoading(true);
-        api.get('/developer/rules')
+        return api.get('/developer/rules')
             .then(r => setRules(r.data))
             .catch(() => setError('Failed to load rules.'))
             .finally(() => setLoading(false));
@@ -141,7 +141,7 @@ function ManageRulesTab() {
                 await api.post('/developer/rules', formData);
             }
             setModal({ open: false, data: null });
-            fetchRules();
+            await fetchRules();  // await so table shows fresh data immediately
         } catch (err) {
             setActionError(err.response?.data?.detail ?? 'Save failed. Please try again.');
         }

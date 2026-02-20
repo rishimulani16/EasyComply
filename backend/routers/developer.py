@@ -70,6 +70,99 @@ def _write_audit(
     db.add(log)
 
 
+def _sync_calendar_for_rule(db: Session, rule: "ComplianceRule") -> dict:
+    """
+    Sync compliance_calendar rows for a single rule.
+
+    For Branch-scope rules:
+      - Delete rows where branch_state is NULL (legacy) or not in rule.applicable_states
+      - Create missing per-company-state rows for states that DO match
+    For Company-scope rules:
+      - Ensure every matching company has exactly one row (branch_state=None)
+      - Remove branch-specific rows if scope changed from Branch → Company
+
+    Returns {"deleted": N, "created": N}
+    """
+    from datetime import date
+    from dateutil.relativedelta import relativedelta
+    from models.models import Company, ComplianceCalendar
+
+    today  = date.today()
+    due    = today + relativedelta(months=int(rule.frequency_months))
+    rule_states = rule.applicable_states or []
+    deleted = 0
+    created = 0
+
+    companies = db.query(Company).all()
+
+    if rule.scope == "Branch":
+        # 1. Remove all invalid rows:  null branch_state OR state not covered by rule
+        existing = db.query(ComplianceCalendar).filter(
+            ComplianceCalendar.rule_id == rule.rule_id
+        ).all()
+        for row in existing:
+            if row.branch_state is None:
+                db.delete(row); deleted += 1
+            elif "ALL" not in rule_states and row.branch_state not in rule_states:
+                db.delete(row); deleted += 1
+        db.flush()
+
+        # 2. Create missing rows per (company × applicable state)
+        for company in companies:
+            hq     = company.hq_state or ""
+            subs   = company.subscription or "Basic"
+            branches = company.branch_states or []
+            company_states = list(dict.fromkeys([hq] + branches)) if subs == "Enterprise" else [hq]
+
+            for state in company_states:
+                if "ALL" not in rule_states and state not in rule_states:
+                    continue
+                exists = db.query(ComplianceCalendar).filter(
+                    ComplianceCalendar.company_id == company.company_id,
+                    ComplianceCalendar.rule_id    == rule.rule_id,
+                    ComplianceCalendar.branch_state == state,
+                ).first()
+                if not exists:
+                    db.add(ComplianceCalendar(
+                        company_id=company.company_id,
+                        rule_id=rule.rule_id,
+                        branch_state=state,
+                        due_date=due,
+                        status="PENDING",
+                        ocr_verified=False,
+                    ))
+                    created += 1
+
+    else:  # Company-scope
+        # Remove any branch-state rows (if rule was changed from Branch → Company)
+        branch_rows = db.query(ComplianceCalendar).filter(
+            ComplianceCalendar.rule_id == rule.rule_id,
+            ComplianceCalendar.branch_state != None,  # noqa: E711
+        ).all()
+        for row in branch_rows:
+            db.delete(row); deleted += 1
+        db.flush()
+
+        # Ensure one Company-scope row per matching company
+        for company in companies:
+            exists = db.query(ComplianceCalendar).filter(
+                ComplianceCalendar.company_id == company.company_id,
+                ComplianceCalendar.rule_id    == rule.rule_id,
+            ).first()
+            if not exists:
+                db.add(ComplianceCalendar(
+                    company_id=company.company_id,
+                    rule_id=rule.rule_id,
+                    branch_state=None,
+                    due_date=due,
+                    status="PENDING",
+                    ocr_verified=False,
+                ))
+                created += 1
+
+    return {"deleted": deleted, "created": created}
+
+
 # ---------------------------------------------------------------------------
 # GET /developer/companies
 # ---------------------------------------------------------------------------
@@ -285,14 +378,30 @@ def update_rule(
     # 1. Snapshot old state before mutation
     old_snapshot = _rule_to_dict(rule)
 
-    # 2. Apply only the fields that were explicitly supplied in the request
+    # 2. Build the dict of fields to update (only those sent by the client).
+    #    Use Core UPDATE (not ORM setattr) — SQLAlchemy plain ARRAY columns have
+    #    no mutation tracking, so ORM setattr silently skips the UPDATE on repeat
+    #    edits. Core UPDATE always emits SQL regardless of ORM identity-map state.
+    from sqlalchemy import update as sql_update
+    CLEARABLE = {"description", "penalty_amount"}
     update_data = body.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(rule, field, value)
+    values_to_set = {
+        k: v for k, v in update_data.items()
+        if v is not None or k in CLEARABLE
+    }
 
-    db.flush()  # apply changes so _rule_to_dict reflects new state
+    if values_to_set:
+        db.execute(
+            sql_update(ComplianceRule)
+            .where(ComplianceRule.rule_id == rule_id)
+            .values(**values_to_set)
+        )
 
-    # 3. Audit log
+    # 3. Reload rule so audit log and calendar sync see the new values
+    db.flush()
+    db.refresh(rule)
+
+    # 4. Audit log
     _write_audit(
         db,
         action="UPDATE",
@@ -304,6 +413,18 @@ def update_rule(
 
     db.commit()
     db.refresh(rule)
+
+    # 4. Sync calendar rows — isolated in its own try/except so a sync
+    #    failure never rolls back the already-committed rule update.
+    try:
+        _sync_calendar_for_rule(db, rule)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        # Calendar sync failed — rule is already updated, log and continue
+        import logging
+        logging.getLogger(__name__).warning(f"Calendar sync failed for rule {rule_id}: {e}")
+
     return rule
 
 
@@ -371,89 +492,28 @@ def delete_rule(
 
 @router.post(
     "/rebuild-calendar",
-    summary="Rebuild Branch-scope calendar rows so each has a correct branch_state",
+    summary="Rebuild all calendar rows so each Branch-scope rule has correct per-state rows",
 )
 def rebuild_calendar(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_developer),
 ):
     """
-    One-shot repair utility.
-
-    For every Branch-scope compliance rule:
-      1. Delete all existing calendar rows where branch_state IS NULL
-         (these were created before per-state logic was implemented).
-      2. Re-create one calendar row per company-state pair that satisfies
-         the rule's applicable_states filter.
-
-    Company-scope rows (branch_state = NULL intentionally) are NOT touched.
+    One-shot repair utility — runs _sync_calendar_for_rule for every active rule.
+    Fixes legacy null branch_state rows and removes rows for states no longer in applicable_states.
     """
-    from datetime import date
-    from dateutil.relativedelta import relativedelta
-    from models.models import ComplianceCalendar
+    all_rules = db.query(ComplianceRule).filter(ComplianceRule.is_active == True).all()
 
-    today = date.today()
-    deleted = 0
-    created = 0
-
-    companies = db.query(Company).all()
-    branch_rules = (
-        db.query(ComplianceRule)
-        .filter(ComplianceRule.scope == "Branch", ComplianceRule.is_active == True)
-        .all()
-    )
-
-    for rule in branch_rules:
-        rule_states = rule.applicable_states or []
-        freq = int(rule.frequency_months)
-        due = today + relativedelta(months=freq)
-
-        # Step 1 — remove stale null-branch_state rows for this rule
-        stale = db.query(ComplianceCalendar).filter(
-            ComplianceCalendar.rule_id == rule.rule_id,
-            ComplianceCalendar.branch_state == None,  # noqa: E711
-        ).all()
-        for row in stale:
-            db.delete(row)
-            deleted += 1
-
-        # Step 2 — re-create correct per-state rows for each company
-        for company in companies:
-            hq = company.hq_state or ""
-            branches = company.branch_states or []
-            sub = company.subscription or "Basic"
-
-            if sub == "Enterprise":
-                company_states = list(dict.fromkeys([hq] + branches))
-            else:
-                company_states = [hq]
-
-            for state in company_states:
-                if "ALL" not in rule_states and state not in rule_states:
-                    continue  # this state isn't covered by the rule
-
-                # Skip if a correct row already exists
-                exists = db.query(ComplianceCalendar).filter(
-                    ComplianceCalendar.company_id == company.company_id,
-                    ComplianceCalendar.rule_id == rule.rule_id,
-                    ComplianceCalendar.branch_state == state,
-                ).first()
-                if exists:
-                    continue
-
-                db.add(ComplianceCalendar(
-                    company_id=company.company_id,
-                    rule_id=rule.rule_id,
-                    branch_state=state,
-                    due_date=due,
-                    status="PENDING",
-                    ocr_verified=False,
-                ))
-                created += 1
+    total_deleted = 0
+    total_created = 0
+    for rule in all_rules:
+        result = _sync_calendar_for_rule(db, rule)
+        total_deleted += result["deleted"]
+        total_created += result["created"]
 
     db.commit()
     return {
         "message": "Calendar rebuilt successfully.",
-        "stale_rows_deleted": deleted,
-        "new_rows_created": created,
+        "stale_rows_deleted": total_deleted,
+        "new_rows_created":   total_created,
     }
