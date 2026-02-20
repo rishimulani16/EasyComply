@@ -14,11 +14,11 @@
 import { useState } from 'react';
 import api from '../api/axiosInstance';
 
-export default function MarkDoneModal({ calendarId, ruleName, onClose, onSuccess }) {
+export default function MarkDoneModal({ calendarId, ruleName, isRedo = false, onClose, onSuccess }) {
     const [note, setNote] = useState('');
     const [renewalDate, setRenewalDate] = useState('');
     const [expiryDate, setExpiryDate] = useState('');
-    const [isPermanent, setIsPermanent] = useState(false);
+    const [useCustomExpiry, setUseCustomExpiry] = useState(false);
     const [loading, setLoading] = useState(false);
     const [apiError, setApiError] = useState('');
     const [result, setResult] = useState(null);
@@ -43,7 +43,7 @@ export default function MarkDoneModal({ calendarId, ruleName, onClose, onSuccess
             const payload = {
                 note: note.trim(),
                 renewal_date: renewalDate,
-                expiry_date: isPermanent ? null : (expiryDate || null),
+                expiry_date: useCustomExpiry ? (expiryDate || null) : null,
             };
             const res = await api.patch(`/compliance/markdone/${calendarId}`, payload);
             setResult(res.data);
@@ -86,7 +86,9 @@ export default function MarkDoneModal({ calendarId, ruleName, onClose, onSuccess
                 {/* Header */}
                 <div className="flex items-start justify-between px-6 py-5 border-b border-slate-700 gap-4">
                     <div className="min-w-0">
-                        <h2 className="text-base font-bold text-white">Mark as Completed</h2>
+                        <h2 className="text-base font-bold text-white">
+                            {isRedo ? 'Update Compliance Record' : 'Mark as Completed'}
+                        </h2>
                         <p className="text-xs text-slate-400 mt-0.5 leading-snug line-clamp-2" title={ruleName}>
                             {ruleName}
                         </p>
@@ -107,6 +109,16 @@ export default function MarkDoneModal({ calendarId, ruleName, onClose, onSuccess
                 <div className="p-6 space-y-4">
                     {!result ? (
                         <>
+                            {/* Re-do notice banner */}
+                            {isRedo && (
+                                <div className="flex items-start gap-2.5 rounded-xl border border-violet-600/40 bg-violet-900/20 px-4 py-3">
+                                    <span className="text-violet-400 text-base mt-0.5">✏️</span>
+                                    <p className="text-violet-300 text-xs leading-relaxed">
+                                        You are updating a <span className="font-semibold">completed</span> rule.
+                                        The new dates will overwrite the previous entry and update the <span className="font-semibold">Due Date</span>.
+                                    </p>
+                                </div>
+                            )}
                             {/* ── Compliance Note ───────────────────────── */}
                             <div>
                                 <label className="block text-xs text-slate-400 uppercase tracking-wide font-medium mb-1.5">
@@ -127,7 +139,7 @@ export default function MarkDoneModal({ calendarId, ruleName, onClose, onSuccess
                             {/* ── Renewal / Certificate Date ────────────── */}
                             <div>
                                 <label className="block text-xs text-slate-400 uppercase tracking-wide font-medium mb-1.5">
-                                    Renewal / Certificate Date <span className="text-red-400">*</span>
+                                    Issue Date <span className="text-red-400">*</span>
                                 </label>
                                 <input
                                     type="date"
@@ -140,61 +152,77 @@ export default function MarkDoneModal({ calendarId, ruleName, onClose, onSuccess
                                                transition-colors disabled:opacity-50 [color-scheme:dark]"
                                 />
                                 <p className="text-xs text-slate-500 mt-1">
-                                    Date the certificate or action was completed/renewed
+                                    Date the certificate or document was issued
                                 </p>
                             </div>
 
-                            {/* ── Expiry / Permanent ────────────────────── */}
+                            {/* ── Expiry Date ───────────────────────────── */}
                             <div>
-                                <div className="flex items-center justify-between mb-1.5">
-                                    <label className="text-xs text-slate-400 uppercase tracking-wide font-medium">
-                                        Expiry Date
+                                <label className="block text-xs text-slate-400 uppercase tracking-wide font-medium mb-2">
+                                    Expiry Date
+                                </label>
+
+                                {/* Radio options */}
+                                <div className="flex flex-col gap-2 mb-3">
+                                    {/* Option 1: Use rule's default */}
+                                    <label className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors
+                                        ${!useCustomExpiry
+                                            ? 'border-indigo-500/60 bg-indigo-600/10'
+                                            : 'border-slate-600 bg-slate-900/50 hover:border-slate-500'}`}>
+                                        <input
+                                            type="radio"
+                                            name="expiryMode"
+                                            checked={!useCustomExpiry}
+                                            onChange={() => { setUseCustomExpiry(false); setExpiryDate(''); }}
+                                            disabled={loading}
+                                            className="accent-indigo-500 w-3.5 h-3.5 shrink-0"
+                                        />
+                                        <div>
+                                            <p className={`text-sm font-medium ${!useCustomExpiry ? 'text-indigo-300' : 'text-slate-300'}`}>
+                                                Use rule's default
+                                            </p>
+                                            <p className="text-xs text-slate-500 mt-0.5">Next due date calculated from rule's frequency</p>
+                                        </div>
                                     </label>
-                                    {/* Permanent toggle */}
-                                    <button
-                                        type="button"
-                                        onClick={() => { setIsPermanent(p => !p); setExpiryDate(''); setApiError(''); }}
-                                        disabled={loading}
-                                        className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border transition-colors
-                                            ${isPermanent
-                                                ? 'bg-emerald-600/20 border-emerald-600/50 text-emerald-300'
-                                                : 'bg-slate-700/50 border-slate-600 text-slate-400 hover:text-slate-200'
-                                            }`}
-                                    >
-                                        <span className={`w-3 h-3 rounded-full border flex items-center justify-center
-                                            ${isPermanent ? 'bg-emerald-500 border-emerald-400' : 'bg-slate-600 border-slate-500'}`}
-                                        >
-                                            {isPermanent && (
-                                                <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 8 8">
-                                                    <path d="M1.5 4l2 2L6.5 2" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-                                                </svg>
-                                            )}
-                                        </span>
-                                        Permanent / No Expiry
-                                    </button>
+
+                                    {/* Option 2: Custom expiry date */}
+                                    <label className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors
+                                        ${useCustomExpiry
+                                            ? 'border-indigo-500/60 bg-indigo-600/10'
+                                            : 'border-slate-600 bg-slate-900/50 hover:border-slate-500'}`}>
+                                        <input
+                                            type="radio"
+                                            name="expiryMode"
+                                            checked={useCustomExpiry}
+                                            onChange={() => setUseCustomExpiry(true)}
+                                            disabled={loading}
+                                            className="accent-indigo-500 w-3.5 h-3.5 shrink-0"
+                                        />
+                                        <div>
+                                            <p className={`text-sm font-medium ${useCustomExpiry ? 'text-indigo-300' : 'text-slate-300'}`}>
+                                                Set custom expiry date
+                                            </p>
+                                            <p className="text-xs text-slate-500 mt-0.5">Next due date calculated from your chosen expiry date</p>
+                                        </div>
+                                    </label>
                                 </div>
+
+                                {/* Date input — only enabled when custom is selected */}
                                 <input
                                     type="date"
                                     value={expiryDate}
                                     min={renewalDate || today}
                                     onChange={(e) => setExpiryDate(e.target.value)}
-                                    disabled={loading || isPermanent}
+                                    disabled={loading || !useCustomExpiry}
                                     className={`w-full bg-slate-900/70 border rounded-xl px-4 py-3 text-sm
                                                focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
                                                transition-colors [color-scheme:dark]
-                                               ${isPermanent
+                                               ${!useCustomExpiry
                                             ? 'border-slate-700 text-slate-500 opacity-40 cursor-not-allowed'
-                                            : 'border-slate-600 text-white disabled:opacity-50'}`}
+                                            : 'border-slate-600 text-white'}`}
                                 />
-                                {isPermanent && (
-                                    <p className="text-xs text-emerald-400 mt-1 flex items-center gap-1">
-                                        <span>♾️</span> Marked as permanent — no expiry date
-                                    </p>
-                                )}
-                                {!isPermanent && expiryDate && (
-                                    <p className="text-xs text-slate-400 mt-1">
-                                        Next due reminder calculated from this date
-                                    </p>
+                                {useCustomExpiry && expiryDate && (
+                                    <p className="text-xs text-slate-400 mt-1">Next due reminder calculated from this date</p>
                                 )}
                             </div>
 

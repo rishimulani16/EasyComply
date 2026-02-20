@@ -184,7 +184,7 @@ def company_dashboard(
 
 @router.post(
     "/compliance/upload/{calendar_id}",
-    summary="Upload a compliance document and run date-based OCR verification",
+    summary="Upload a compliance document and run issue-date OCR verification",
 )
 def upload_document(
     calendar_id: int,
@@ -193,21 +193,22 @@ def upload_document(
     current_user: dict = Depends(require_company),
 ):
     """
-    Date-based Verification Logic:
+    Issue-Date Verification Logic:
     1. Extract text via Tesseract OCR.
-    2. Extract **Dates** — issue dates (<= today) and expiry dates (> today).
-    3. Optionally check for the **Company Name** (reported but does not affect pass/fail).
-
-    **Pass Condition**:
-    - At least one valid date found (issue date OR expiry date).
+    2. Find the earliest (oldest) date in the document — treated as the **issue date**.
+    3. Compute: effective_expiry = issue_date + rule.frequency_months
+    4. Compare effective_expiry against today:
+       - effective_expiry > today  → document still valid  → COMPLETED / OVERDUE-PASS
+       - effective_expiry <= today → document has expired  → FAILED (document outdated)
+    5. On PASS, set due_date = next_due_date = effective_expiry.
 
     **Status Outcomes**:
-    - `COMPLETED`    : Pass condition met + uploaded before due_date.
-    - `OVERDUE-PASS` : Pass condition met + uploaded after due_date.
-    - `FAILED`       : No dates found in the document.
+    - `COMPLETED`    : Valid + uploaded on/before due_date.
+    - `OVERDUE-PASS` : Valid + uploaded after due_date.
+    - `FAILED`       : No date found, OR document has expired per rule frequency.
     """
     # ------------------------------------------------------------------
-    # Fetch calendar and company details
+    # Fetch calendar entry
     # ------------------------------------------------------------------
     calendar: ComplianceCalendar | None = (
         db.query(ComplianceCalendar)
@@ -226,10 +227,6 @@ def upload_document(
             detail="You do not have permission to upload for this calendar entry.",
         )
 
-    # Fetch company name (checked optionally — does not affect pass/fail)
-    company = db.query(Company).filter(Company.company_id == current_user["company_id"]).first()
-    company_name_clean = re.sub(r'[^a-zA-Z0-9]', '', company.company_name.lower()) if company else ""
-
     # Validate file type
     allowed_types = {"application/pdf", "image/png", "image/jpeg", "image/tiff", "image/bmp"}
     if file.content_type not in allowed_types:
@@ -239,7 +236,7 @@ def upload_document(
         )
 
     # ------------------------------------------------------------------
-    # Step 1 — Save file to /backend/uploads/
+    # Step 1 — Save file
     # ------------------------------------------------------------------
     safe_filename = f"cal_{calendar_id}_{file.filename}"
     file_path = UPLOAD_DIR / safe_filename
@@ -249,20 +246,18 @@ def upload_document(
     document_url = str(file_path)
 
     # ------------------------------------------------------------------
-    # Step 2 — Extract text using Tesseract OCR
+    # Step 2 — Extract text via Tesseract OCR
     # ------------------------------------------------------------------
     extracted_text = _extract_text_from_file(file_path, file.content_type)
-    lower_text = extracted_text.lower()
-    clean_text = re.sub(r'[^a-zA-Z0-9]', '', lower_text)
 
     # ------------------------------------------------------------------
-    # Step 3 — Date Extraction (primary check)
-    # We look for common date formats: DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY, DD Mon YYYY
+    # Step 3 — Extract dates from OCR text
+    # Only the issue date matters; we pick the earliest date found.
     # ------------------------------------------------------------------
     date_patterns = [
-        r"\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b",           # DD/MM/YYYY or DD-MM-YYYY
-        r"\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b",             # YYYY-MM-DD
-        r"\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{2,4})\b", # DD Mon YYYY
+        r"\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b",            # DD/MM/YYYY or DD-MM-YYYY
+        r"\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b",              # YYYY-MM-DD
+        r"\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{2,4})\b",  # DD Mon YYYY
     ]
 
     found_dates = []
@@ -271,76 +266,72 @@ def upload_document(
         for m in matches:
             ds = " ".join(m) if isinstance(m, tuple) else m
             try:
-                from dateutil import parser
-                d = parser.parse(ds, dayfirst=True).date()
+                from dateutil import parser as date_parser
+                d = date_parser.parse(ds, dayfirst=True).date()
                 found_dates.append(d)
             except Exception:
                 pass
 
-    found_dates = sorted(list(set(found_dates)))  # Deduplicate and sort
+    found_dates = sorted(set(found_dates))  # deduplicate & sort ascending
     today = date.today()
 
-    expiry_dates = [d for d in found_dates if d > today]   # future dates = expiry
-    issue_dates  = [d for d in found_dates if d <= today]  # past/today dates = issue
+    # ------------------------------------------------------------------
+    # Step 4 — Fetch rule frequency
+    # ------------------------------------------------------------------
+    rule = db.query(ComplianceRule).filter(ComplianceRule.rule_id == calendar.rule_id).first()
+    freq_months = rule.frequency_months if rule else 12
 
     # ------------------------------------------------------------------
-    # Step 4 — Company Name Check (informational only)
+    # Step 5 — Determine issue date and validity
+    # Issue date = earliest date found in the document.
+    # Effective expiry = issue_date + frequency_months.
     # ------------------------------------------------------------------
-    name_found = bool(company_name_clean and company_name_clean in clean_text)
-
-    # ------------------------------------------------------------------
-    # Step 5 — Determine verification status
-    # Pass condition: at least one date (issue OR expiry) must be present.
-    # Company name is reported but does NOT affect pass/fail.
-    # ------------------------------------------------------------------
-    if found_dates:
-        # Determine COMPLETED vs OVERDUE-PASS
-        if calendar.due_date and calendar.due_date < today:
-            final_status = "OVERDUE-PASS"
-        else:
-            final_status = "COMPLETED"
-
-        ocr_verified = True
-
-        # Pick anchor for next_due_date:
-        # Prefer furthest expiry date; fall back to latest issue date.
-        rule = db.query(ComplianceRule).filter(ComplianceRule.rule_id == calendar.rule_id).first()
-        freq_months = rule.frequency_months if rule else 12
-
-        if expiry_dates:
-            anchor_date = expiry_dates[-1]   # furthest future date
-        else:
-            anchor_date = issue_dates[-1]    # most recent issue date
-
-        next_due = anchor_date + relativedelta(months=freq_months)
-
-        company_note = (
-            f" Company '{company.company_name}' found in document."
-            if name_found
-            else f" Company '{company.company_name}' not detected (not required)."
-        ) if company else ""
-
-        ocr_result = (
-            f"Verified. Issue dates: {[d.isoformat() for d in issue_dates]}. "
-            f"Expiry dates: {[d.isoformat() for d in expiry_dates]}.{company_note}"
-        )
+    if not found_dates:
+        # No date found at all → FAILED
+        final_status  = "FAILED"
+        ocr_verified  = False
+        next_due      = None
+        issue_date    = None
+        effective_exp = None
+        ocr_result    = "Verification Failed: No issue date found in the document."
 
     else:
-        final_status = "FAILED"
-        ocr_verified = False
-        next_due = None
-        ocr_result = "Verification Failed: No valid dates (issue date or expiry date) found in the document."
+        issue_date    = found_dates[0]                          # earliest = issue date
+        effective_exp = issue_date + relativedelta(months=freq_months)
+
+        if effective_exp > today:
+            # Document still valid
+            ocr_verified = True
+            final_status = (
+                "OVERDUE-PASS"
+                if calendar.due_date and calendar.due_date < today
+                else "COMPLETED"
+            )
+            next_due   = effective_exp
+            ocr_result = (
+                f"Verified. Issue date: {issue_date.isoformat()}. "
+                f"Effective expiry: {effective_exp.isoformat()} "
+                f"({freq_months}m from issue date). Document is valid."
+            )
+        else:
+            # Document has expired per rule frequency → FAILED
+            final_status  = "FAILED"
+            ocr_verified  = False
+            next_due      = None
+            ocr_result    = (
+                f"Verification Failed: Document is outdated. "
+                f"Issue date: {issue_date.isoformat()}, "
+                f"Effective expiry: {effective_exp.isoformat()} "
+                f"({freq_months}m from issue date). Please upload a more recent document."
+            )
 
     # ------------------------------------------------------------------
     # Update calendar row
-    # Re-uploads are fully supported: status, due_date, and next_due_date
-    # are all refreshed based on the newly submitted document.
     # ------------------------------------------------------------------
-    calendar.status        = final_status
-    calendar.document_url  = document_url
-    # Roll due_date forward only on a passing upload (COMPLETED / OVERDUE-PASS)
+    calendar.status       = final_status
+    calendar.document_url = document_url
     if next_due is not None:
-        calendar.due_date = next_due
+        calendar.due_date = next_due      # roll Due Date forward on valid upload
     calendar.ocr_verified  = ocr_verified
     calendar.ocr_result    = ocr_result
     calendar.verified_at   = datetime.now(timezone.utc)
@@ -349,12 +340,11 @@ def upload_document(
     db.commit()
 
     return {
-        "status":        final_status,
-        "ocr_result":    ocr_result,
-        "next_due_date": next_due,
-        "issue_dates":   [d.isoformat() for d in issue_dates],
-        "expiry_dates":  [d.isoformat() for d in expiry_dates],
-        "company_found": name_found,
+        "status":           final_status,
+        "ocr_result":       ocr_result,
+        "issue_date":       issue_date.isoformat() if issue_date else None,
+        "effective_expiry": effective_exp.isoformat() if effective_exp else None,
+        "next_due_date":    next_due.isoformat() if next_due else None,
     }
 
 
@@ -451,6 +441,7 @@ def mark_done(
     calendar.ocr_verified  = False
     calendar.ocr_result    = ocr_result
     calendar.verified_at   = datetime.now(timezone.utc)
+    calendar.due_date      = next_due   # roll Due Date forward on re-do
     calendar.next_due_date = next_due
 
     db.commit()

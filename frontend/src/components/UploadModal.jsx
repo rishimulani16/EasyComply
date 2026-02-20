@@ -67,7 +67,7 @@ export default function UploadModal({ calendarId, ruleName, isReupload = false, 
     // ── Result box variants ────────────────────────────────────────────
     const ResultBox = () => {
         if (!result) return null;
-        const { status, next_due_date, keywords_missing } = result;
+        const { status, issue_date, effective_expiry, next_due_date, ocr_result } = result;
 
         if (status === 'COMPLETED') {
             return (
@@ -76,8 +76,18 @@ export default function UploadModal({ calendarId, ruleName, isReupload = false, 
                         <span className="text-2xl">✅</span>
                         <p className="text-emerald-300 font-semibold text-base">Document Verified Successfully</p>
                     </div>
-                    {next_due_date && (
+                    {issue_date && (
                         <p className="text-slate-300 text-sm">
+                            Issue date: <span className="text-white font-medium">{issue_date}</span>
+                        </p>
+                    )}
+                    {effective_expiry && (
+                        <p className="text-slate-300 text-sm">
+                            Effective expiry: <span className="text-white font-medium">{effective_expiry}</span>
+                        </p>
+                    )}
+                    {next_due_date && (
+                        <p className="text-slate-300 text-sm pt-1 border-t border-emerald-700/30">
                             Next due date: <span className="text-white font-medium">{next_due_date}</span>
                         </p>
                     )}
@@ -92,8 +102,18 @@ export default function UploadModal({ calendarId, ruleName, isReupload = false, 
                         <span className="text-2xl">🟡</span>
                         <p className="text-amber-300 font-semibold text-base">Document valid but uploaded after due date</p>
                     </div>
-                    {next_due_date && (
+                    {issue_date && (
                         <p className="text-slate-300 text-sm">
+                            Issue date: <span className="text-white font-medium">{issue_date}</span>
+                        </p>
+                    )}
+                    {effective_expiry && (
+                        <p className="text-slate-300 text-sm">
+                            Effective expiry: <span className="text-white font-medium">{effective_expiry}</span>
+                        </p>
+                    )}
+                    {next_due_date && (
+                        <p className="text-slate-300 text-sm pt-1 border-t border-amber-700/30">
                             Next due date: <span className="text-white font-medium">{next_due_date}</span>
                         </p>
                     )}
@@ -102,31 +122,24 @@ export default function UploadModal({ calendarId, ruleName, isReupload = false, 
         }
 
         if (status === 'FAILED') {
-            const missing = Array.isArray(keywords_missing) ? keywords_missing : [];
             return (
-                <div className="rounded-2xl border border-red-600/40 bg-red-900/20 p-5 space-y-3">
+                <div className="rounded-2xl border border-red-600/40 bg-red-900/20 p-5 space-y-2">
                     <div className="flex items-center gap-2">
                         <span className="text-2xl">❌</span>
                         <p className="text-red-300 font-semibold text-base">Verification Failed</p>
                     </div>
-                    {missing.length > 0 && (
-                        <div>
-                            <p className="text-slate-400 text-xs uppercase tracking-wide font-medium mb-1.5">Missing keywords</p>
-                            <div className="flex flex-wrap gap-1.5">
-                                {missing.map((kw) => (
-                                    <span key={kw} className="px-2 py-0.5 rounded-full bg-red-800/50 border border-red-700 text-red-300 text-xs font-mono">
-                                        {kw}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
+                    {issue_date && effective_expiry && (
+                        <p className="text-slate-300 text-sm">
+                            Issue date: <span className="text-white font-medium">{issue_date}</span>
+                            {' · '}Expired on: <span className="text-red-300 font-medium">{effective_expiry}</span>
+                        </p>
                     )}
-                    <p className="text-slate-400 text-sm">Please fix your document and re-upload.</p>
+                    <p className="text-slate-400 text-sm">{ocr_result}</p>
                 </div>
             );
         }
 
-        // Fallback for any unexpected status
+        // Fallback
         return (
             <div className="rounded-2xl border border-slate-600 bg-slate-800 p-4 text-slate-300 text-sm">
                 Status: <span className="font-medium text-white">{status}</span>

@@ -235,7 +235,18 @@ export default function CompanyDashboard() {
                                                             Re-upload
                                                         </button>
                                                     ) : row.status === 'COMPLETED' || row.status === 'OVERDUE-PASS' ? (
-                                                        <span className="text-slate-500 text-xs">Done</span>
+                                                        /* Re-do button for completed non-document rules */
+                                                        <button
+                                                            onClick={() => setMarkDoneModal({ open: true, calendarId: row.calendar_id, ruleName: row.rule_name, isRedo: true })}
+                                                            className="px-3 py-1.5 bg-violet-600/20 hover:bg-violet-600/40 border border-violet-600/50
+                                text-violet-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                            </svg>
+                                                            Re-do
+                                                        </button>
                                                     ) : row.document_required ? (
                                                         <button
                                                             onClick={() => setUploadModal({ open: true, calendarId: row.calendar_id, ruleName: row.rule_name, isReupload: false })}
@@ -290,9 +301,10 @@ export default function CompanyDashboard() {
                 <MarkDoneModal
                     calendarId={markDoneModal.calendarId}
                     ruleName={markDoneModal.ruleName}
-                    onClose={() => setMarkDoneModal({ open: false, calendarId: null, ruleName: '' })}
+                    isRedo={markDoneModal.isRedo ?? false}
+                    onClose={() => setMarkDoneModal({ open: false, calendarId: null, ruleName: '', isRedo: false })}
                     onSuccess={() => {
-                        setMarkDoneModal({ open: false, calendarId: null, ruleName: '' });
+                        setMarkDoneModal({ open: false, calendarId: null, ruleName: '', isRedo: false });
                         fetchDashboard();
                     }}
                 />
