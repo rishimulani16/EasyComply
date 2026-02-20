@@ -153,121 +153,114 @@ export default function CompanyDashboard() {
                     </div>
                 )}
 
-                {/* Compliance table */}
-                <div className="bg-slate-800/40 border border-slate-700 rounded-2xl overflow-hidden">
-                    <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
-                        <h2 className="font-bold text-white">Compliance Calendar</h2>
-                        <span className="text-xs text-slate-400">Sorted by nearest due date</span>
+                {/* ── Grouped Compliance Panels ─────────────────────────────── */}
+                {rules.length === 0 ? (
+                    <div className="bg-slate-800/40 border border-slate-700 rounded-2xl text-center py-16 text-slate-500">
+                        <p className="text-lg mb-1">No compliance rules yet</p>
+                        <p className="text-sm">Rules will appear here after company onboarding.</p>
                     </div>
+                ) : (() => {
+                    /**
+                     * Grouping rules:
+                     * 1. scope='Branch'  → group by branch_state (API gives one row per state)
+                     * 2. scope='Company' + applicable_states is exactly ONE specific state
+                     *    (not 'ALL', not multiple) → also goes into that state's panel
+                     * 3. Everything else (Company + ALL, Company + multi-state) → Company-wide panel
+                     */
+                    const byState = {};
+                    const companyWide = [];
 
-                    {rules.length === 0 ? (
-                        <div className="text-center py-16 text-slate-500">
-                            <p className="text-lg mb-1">No compliance rules yet</p>
-                            <p className="text-sm">Rules will appear here after company onboarding.</p>
-                        </div>
-                    ) : (
+                    rules.forEach(row => {
+                        if (row.scope === 'Branch') {
+                            // Branch scope: one calendar row per branch state already
+                            const state = row.branch_state ?? 'Unknown';
+                            if (!byState[state]) byState[state] = [];
+                            byState[state].push(row);
+                        } else {
+                            // Company scope: check if rule targets exactly one specific state
+                            const states = (row.applicable_states ?? []).filter(s => s !== 'ALL');
+                            if (states.length === 1) {
+                                // Single-state Company-scope rule → goes into that state's panel
+                                const state = states[0];
+                                if (!byState[state]) byState[state] = [];
+                                byState[state].push(row);
+                            } else {
+                                // Multi-state or ALL → Company-wide panel
+                                companyWide.push(row);
+                            }
+                        }
+                    });
+
+                    const stateColors = [
+                        { bg: 'bg-indigo-600/10', border: 'border-indigo-600/40', text: 'text-indigo-300', badge: 'bg-indigo-900/60 border-indigo-700 text-indigo-300' },
+                        { bg: 'bg-purple-600/10', border: 'border-purple-600/40', text: 'text-purple-300', badge: 'bg-purple-900/60 border-purple-700 text-purple-300' },
+                        { bg: 'bg-cyan-600/10', border: 'border-cyan-600/40', text: 'text-cyan-300', badge: 'bg-cyan-900/60 border-cyan-700 text-cyan-300' },
+                        { bg: 'bg-teal-600/10', border: 'border-teal-600/40', text: 'text-teal-300', badge: 'bg-teal-900/60 border-teal-700 text-teal-300' },
+                    ];
+
+                    const RulesTable = ({ rows }) => (
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr className="text-slate-400 text-xs uppercase tracking-wider bg-slate-800/60">
-                                        {['Rule Name', 'Frequency', 'Due Date', 'Scope', 'Status', 'Action'].map(h => (
+                                        {['Rule Name', 'Frequency', 'Due Date', 'Status', 'Action'].map(h => (
                                             <th key={h} className="px-5 py-3 text-left font-medium">{h}</th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700/40">
-                                    {rules.map((row) => {
+                                    {rows.map((row) => {
                                         const isOverdue = row.status === 'OVERDUE' || row.status === 'FAILED';
                                         const isDue7Days = row.due_date && !isOverdue && daysUntil(row.due_date) < 7;
-
                                         return (
                                             <tr key={row.calendar_id}
                                                 className={`transition-colors hover:bg-slate-800/50
-                          ${isOverdue ? 'bg-red-900/10' : isDue7Days ? 'bg-yellow-900/10' : ''}`}
+                                                    ${isOverdue ? 'bg-red-900/10' : isDue7Days ? 'bg-yellow-900/10' : ''}`}
                                             >
-                                                {/* Rule name */}
                                                 <td className="px-5 py-4">
-                                                    <p className="font-medium text-white max-w-[220px] truncate" title={row.rule_name}>
-                                                        {row.rule_name}
-                                                    </p>
+                                                    <p className="font-medium text-white max-w-[220px] truncate" title={row.rule_name}>{row.rule_name}</p>
                                                     {row.document_required && (
                                                         <span className="text-xs text-slate-500 mt-0.5 inline-block">Document required</span>
                                                     )}
                                                 </td>
-
-                                                {/* Frequency */}
                                                 <td className="px-5 py-4 text-slate-300">{freqLabel(row.frequency_months)}</td>
-
-                                                {/* Due date */}
                                                 <td className="px-5 py-4">
                                                     <span className={`font-medium ${isOverdue ? 'text-red-400' : isDue7Days ? 'text-yellow-400' : 'text-slate-300'}`}>
                                                         {formatDate(row.due_date)}
                                                     </span>
                                                 </td>
-
-                                                {/* Scope */}
-                                                <td className="px-5 py-4">
-                                                    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium
-                            ${row.scope === 'Branch'
-                                                            ? 'bg-purple-900/50 text-purple-300 border-purple-700'
-                                                            : 'bg-slate-700 text-slate-300 border-slate-600'}`}
-                                                    >
-                                                        {row.scope ?? 'Company'}
-                                                    </span>
-                                                </td>
-
-                                                {/* Status */}
                                                 <td className="px-5 py-4"><StatusBadge status={row.status} /></td>
-
-                                                {/* Action */}
                                                 <td className="px-5 py-4">
                                                     {(row.status === 'COMPLETED' || row.status === 'OVERDUE-PASS') && row.document_required ? (
-                                                        /* Re-upload button for completed document-required rules */
                                                         <button
                                                             onClick={() => setUploadModal({ open: true, calendarId: row.calendar_id, ruleName: row.rule_name, isReupload: true })}
-                                                            className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/40 border border-amber-600/50
-                                text-amber-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                                                            className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/40 border border-amber-600/50 text-amber-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
                                                         >
-                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                                            </svg>
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                                                             Re-upload
                                                         </button>
-                                                    ) : row.status === 'COMPLETED' || row.status === 'OVERDUE-PASS' ? (
-                                                        /* Re-do button for completed non-document rules */
+                                                    ) : (row.status === 'COMPLETED' || row.status === 'OVERDUE-PASS') ? (
                                                         <button
                                                             onClick={() => setMarkDoneModal({ open: true, calendarId: row.calendar_id, ruleName: row.rule_name, isRedo: true })}
-                                                            className="px-3 py-1.5 bg-violet-600/20 hover:bg-violet-600/40 border border-violet-600/50
-                                text-violet-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                                                            className="px-3 py-1.5 bg-violet-600/20 hover:bg-violet-600/40 border border-violet-600/50 text-violet-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
                                                         >
-                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                            </svg>
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                                             Re-do
                                                         </button>
                                                     ) : row.document_required ? (
                                                         <button
                                                             onClick={() => setUploadModal({ open: true, calendarId: row.calendar_id, ruleName: row.rule_name, isReupload: false })}
-                                                            className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-600/50
-                                text-indigo-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                                                            className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-600/50 text-indigo-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
                                                         >
-                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                                            </svg>
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
                                                             Upload
                                                         </button>
                                                     ) : (
                                                         <button
                                                             onClick={() => setMarkDoneModal({ open: true, calendarId: row.calendar_id, ruleName: row.rule_name })}
-                                                            className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-600/50
-                                text-emerald-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                                                            className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-600/50 text-emerald-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
                                                         >
-                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                            </svg>
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                                                             Mark Done
                                                         </button>
                                                     )}
@@ -278,8 +271,61 @@ export default function CompanyDashboard() {
                                 </tbody>
                             </table>
                         </div>
-                    )}
-                </div>
+                    );
+
+                    return (
+                        <div className="space-y-6">
+                            {/* ── Per-state panels (Location-specific / Branch scope) */}
+                            {Object.entries(byState).map(([state, rows], idx) => {
+                                const col = stateColors[idx % stateColors.length];
+                                const done = rows.filter(r => r.status === 'COMPLETED' || r.status === 'OVERDUE-PASS').length;
+                                return (
+                                    <div key={state} className={`rounded-2xl border ${col.border} overflow-hidden`}>
+                                        {/* Panel header */}
+                                        <div className={`px-5 py-4 ${col.bg} border-b ${col.border} flex items-center justify-between`}>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl">📍</span>
+                                                <div>
+                                                    <h2 className={`font-bold text-base ${col.text}`}>{state}</h2>
+                                                    <p className="text-xs text-slate-400 mt-0.5">Location-specific compliance rules</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${col.badge}`}>
+                                                    {done}/{rows.length} completed
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="bg-slate-800/40">
+                                            <RulesTable rows={rows} />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+
+                            {/* ── Company-wide panel */}
+                            {companyWide.length > 0 && (
+                                <div className="rounded-2xl border border-slate-600/50 overflow-hidden">
+                                    <div className="px-5 py-4 bg-slate-800/60 border-b border-slate-700 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-xl">🏢</span>
+                                            <div>
+                                                <h2 className="font-bold text-base text-slate-200">Company-wide Rules</h2>
+                                                <p className="text-xs text-slate-400 mt-0.5">Same document valid across all locations</p>
+                                            </div>
+                                        </div>
+                                        <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-slate-700 border-slate-600 text-slate-300">
+                                            {companyWide.filter(r => r.status === 'COMPLETED' || r.status === 'OVERDUE-PASS').length}/{companyWide.length} completed
+                                        </span>
+                                    </div>
+                                    <div className="bg-slate-800/40">
+                                        <RulesTable rows={companyWide} />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
             </main>
 
             {/* Upload modal */}

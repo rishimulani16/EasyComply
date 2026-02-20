@@ -190,19 +190,52 @@ def company_signup(body: SignupRequest, db: Session = Depends(get_db)):
 
     # ------------------------------------------------------------------
     # Step 5 — Bulk-insert ComplianceCalendar rows
+    # Branch-scope rules: one row per matching state (branch_state = state)
+    # Company-scope rules: one row total (branch_state = None)
     # ------------------------------------------------------------------
     today = date.today()
-    calendar_rows = [
-        ComplianceCalendar(
-            company_id=company.company_id,
-            rule_id=rule.rule_id,
-            branch_state=None,
-            due_date=today + relativedelta(months=int(rule.frequency_months)),
-            status="PENDING",
-            ocr_verified=False,
-        )
-        for rule in matched_rules
-    ]
+    calendar_rows = []
+
+    for rule in matched_rules:
+        rule_states = rule.applicable_states or []
+        freq = int(rule.frequency_months)
+        due = today + relativedelta(months=freq)
+
+        if rule.scope == "Branch":
+            # Create one calendar entry per state the company operates in
+            # that overlaps with the rule's applicable_states
+            for state in states_to_match:
+                if "ALL" in rule_states or state in rule_states:
+                    # Avoid duplicate if already exists
+                    exists = db.query(ComplianceCalendar).filter(
+                        ComplianceCalendar.company_id == company.company_id,
+                        ComplianceCalendar.rule_id == rule.rule_id,
+                        ComplianceCalendar.branch_state == state,
+                    ).first()
+                    if not exists:
+                        calendar_rows.append(ComplianceCalendar(
+                            company_id=company.company_id,
+                            rule_id=rule.rule_id,
+                            branch_state=state,
+                            due_date=due,
+                            status="PENDING",
+                            ocr_verified=False,
+                        ))
+        else:
+            # Company-scope: one row, no branch differentiation
+            exists = db.query(ComplianceCalendar).filter(
+                ComplianceCalendar.company_id == company.company_id,
+                ComplianceCalendar.rule_id == rule.rule_id,
+            ).first()
+            if not exists:
+                calendar_rows.append(ComplianceCalendar(
+                    company_id=company.company_id,
+                    rule_id=rule.rule_id,
+                    branch_state=None,
+                    due_date=due,
+                    status="PENDING",
+                    ocr_verified=False,
+                ))
 
 
     if calendar_rows:

@@ -195,7 +195,7 @@ function ManageRulesTab() {
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="bg-slate-800/80 text-slate-400 text-xs uppercase tracking-wider">
-                                {['Rule Name', 'Industries', 'States', 'Frequency', 'Penalty', 'Impact', 'Actions'].map(h => (
+                                {['Rule Name', 'Industries', 'States', 'Scope', 'Frequency', 'Penalty', 'Impact', 'Actions'].map(h => (
                                     <th key={h} className="px-4 py-3 text-left font-medium">{h}</th>
                                 ))}
                             </tr>
@@ -209,6 +209,17 @@ function ManageRulesTab() {
                                     <td className="px-4 py-3 text-slate-300">{r.industry_type?.join(', ')}</td>
                                     <td className="px-4 py-3 text-slate-300 max-w-[140px]">
                                         <p className="truncate" title={r.applicable_states?.join(', ')}>{r.applicable_states?.join(', ')}</p>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        {r.scope === 'Branch' ? (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-900/50 text-purple-300 border-purple-700">
+                                                📍 Location-specific
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-slate-700 text-slate-300 border-slate-600">
+                                                🏢 Company-wide
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-4 py-3 text-slate-300">{freqLabel(r.frequency_months)}</td>
                                     <td className="px-4 py-3 text-slate-300 max-w-[140px]">

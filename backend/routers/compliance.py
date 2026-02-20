@@ -156,6 +156,7 @@ def company_dashboard(
             "document_required": rule.document_required,
             "penalty_impact":    rule.penalty_impact,
             "scope":             rule.scope,
+            "applicable_states": rule.applicable_states or [],
         })
 
     if updated:

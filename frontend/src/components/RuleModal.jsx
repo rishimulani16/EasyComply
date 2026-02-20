@@ -68,6 +68,7 @@ export default function RuleModal({ isOpen, onClose, onSubmit, initialData }) {
             document_required: false,
             penalty_amount: '',
             penalty_impact: 'Medium',
+            scope: 'Company',
         },
     });
 
@@ -78,6 +79,7 @@ export default function RuleModal({ isOpen, onClose, onSubmit, initialData }) {
             industry_type: ['ALL'], applicable_states: ['ALL'], company_type: ['ALL'],
             min_employees: 0, max_employees: 999999, frequency_months: 12,
             document_required: false, penalty_amount: '', penalty_impact: 'Medium',
+            scope: 'Company',
         });
     }, [isOpen, initialData, reset]);
 
@@ -236,6 +238,37 @@ export default function RuleModal({ isOpen, onClose, onSubmit, initialData }) {
                                     <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all
                     ${field.value ? 'left-7' : 'left-1'}`} />
                                 </button>
+                            )}
+                        />
+                    </div>
+
+                    {/* Scope toggle */}
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">
+                            Document Scope
+                        </label>
+                        <p className="text-xs text-slate-500 mb-3">Does each state/branch need a separate document, or is one upload valid for all locations?</p>
+                        <Controller name="scope" control={control}
+                            render={({ field }) => (
+                                <div className="grid grid-cols-2 gap-2">
+                                    {[
+                                        { value: 'Company', label: '🏢 Company-wide', sub: 'One upload valid for all branches' },
+                                        { value: 'Branch', label: '📍 Location-specific', sub: 'Separate upload per state/branch' },
+                                    ].map(({ value, label, sub }) => (
+                                        <button
+                                            key={value}
+                                            type="button"
+                                            onClick={() => field.onChange(value)}
+                                            className={`flex flex-col items-start px-4 py-3 rounded-xl border text-left transition-colors
+                                                ${field.value === value
+                                                    ? 'bg-indigo-600/15 border-indigo-500/60 text-white'
+                                                    : 'bg-slate-900 border-slate-600 text-slate-400 hover:border-slate-500'}`}
+                                        >
+                                            <span className={`text-sm font-semibold ${field.value === value ? 'text-indigo-300' : ''}`}>{label}</span>
+                                            <span className="text-xs text-slate-500 mt-0.5">{sub}</span>
+                                        </button>
+                                    ))}
+                                </div>
                             )}
                         />
                     </div>
