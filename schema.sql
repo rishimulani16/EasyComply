@@ -73,7 +73,7 @@ CREATE TABLE compliance_calendar (
     branch_state  VARCHAR(50),
     due_date      DATE,
     status        VARCHAR(20)  DEFAULT 'PENDING'
-                               CHECK (status IN ('PENDING', 'COMPLETED', 'OVERDUE', 'OVERDUE-PASS', 'FAILED')),
+                               CHECK (status IN ('PENDING', 'COMPLETED', 'OVERDUE-PASS', 'FAILED')),
     document_url  VARCHAR(500),
     ocr_verified  BOOLEAN      DEFAULT FALSE,
     ocr_result    TEXT,

@@ -4,7 +4,7 @@ Company Admin panel routes.
 
 Endpoints:
     POST /company/signup    — register company, auto-match rules, populate calendar
-    GET  /company/dashboard — see routers/compliance.py (enriched version with join + auto-OVERDUE)
+    GET  /company/dashboard — see routers/compliance.py (enriched version with join)
 """
 
 import os
@@ -266,4 +266,4 @@ def company_signup(body: SignupRequest, db: Session = Depends(get_db)):
 
 
 # GET /company/dashboard is implemented in routers/compliance.py
-# with full join query, auto-OVERDUE logic, and summary counts.
+# with full join query and summary counts.

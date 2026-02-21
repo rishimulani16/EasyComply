@@ -85,7 +85,7 @@ class ComplianceCalendar(Base):
     rule_id       = Column(Integer, nullable=True)          # FK → compliance_rules
     branch_state  = Column(String(50), nullable=True)
     due_date      = Column(Date, nullable=True)
-    status        = Column(String(20), default="PENDING")   # PENDING | COMPLETED | OVERDUE | OVERDUE-PASS | FAILED
+    status        = Column(String(20), default="PENDING")   # PENDING | COMPLETED | OVERDUE-PASS | FAILED
     document_url  = Column(String(500), nullable=True)
     ocr_verified  = Column(Boolean, default=False)
     ocr_result    = Column(Text, nullable=True)

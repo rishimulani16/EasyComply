@@ -11,7 +11,7 @@ Inserts:
   • 1 developer user (admin@ezcompliance.in / Admin@1234)
   • 2 company admins + their companies
   • compliance_calendar rows auto-matched from compliance_rules
-    with realistic COMPLETED / PENDING / OVERDUE spread (30/40/30 %)
+    with realistic COMPLETED / PENDING spread (30/70 %)
 
 Safe to re-run — every insert is guarded by an existence check.
 """
@@ -120,16 +120,17 @@ def _random_status_row(company_id: int, rule_id: int, freq_months: int, branch_s
             "verified_at":   datetime.now(timezone.utc) - timedelta(days=5),
             "next_due_date": past_due + relativedelta(months=freq_months),
         })
-    elif roll < 0.70:        # 40 % — PENDING
-        row.update({
-            "status":   "PENDING",
-            "due_date": today + timedelta(days=random.randint(1, 30)),
-        })
-    else:                    # 30 % — OVERDUE
-        row.update({
-            "status":   "OVERDUE",
-            "due_date": today - timedelta(days=random.randint(1, 20)),
-        })
+    else:                    # 70 % — PENDING (some future, some past-due)
+        if random.random() < 0.6:
+            row.update({
+                "status":   "PENDING",
+                "due_date": today + timedelta(days=random.randint(1, 30)),
+            })
+        else:
+            row.update({
+                "status":   "PENDING",
+                "due_date": today - timedelta(days=random.randint(1, 20)),
+            })
 
     return row
 

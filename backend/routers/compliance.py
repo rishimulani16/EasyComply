@@ -108,13 +108,10 @@ def company_dashboard(
     """
     Returns the full compliance calendar for the authenticated company.
 
-    **Auto-status update**: any PENDING entry whose due_date has already
-    passed is flipped to OVERDUE before the response is built.
-
     Response shape:
     ```json
     {
-      "summary": {"total": N, "completed": N, "pending": N, "overdue": N},
+      "summary": {"total": N, "completed": N, "pending": N, "failed": N, "compliance_score": N},
       "rules": [{ calendar fields + rule_name, frequency_months, ... }]
     }
     ```
@@ -126,16 +123,9 @@ def company_dashboard(
         .all()
     )
 
-    today = date.today()
     rows_to_return = []
-    updated = False
 
     for cal, rule in results:
-        # Auto-flip PENDING → OVERDUE if past due
-        if cal.due_date and cal.due_date < today and cal.status == "PENDING":
-            cal.status = "OVERDUE"
-            updated = True
-
         rows_to_return.append({
             # Calendar fields
             "calendar_id":   cal.calendar_id,
@@ -158,9 +148,6 @@ def company_dashboard(
             "scope":             rule.scope,
             "applicable_states": rule.applicable_states or [],
         })
-
-    if updated:
-        db.commit()
 
     # Build summary counts
     statuses = [r["status"] for r in rows_to_return]
@@ -185,7 +172,7 @@ def company_dashboard(
         "total":     len(statuses),
         "completed": statuses.count("COMPLETED") + statuses.count("OVERDUE-PASS"),
         "pending":   statuses.count("PENDING"),
-        "overdue":   statuses.count("OVERDUE") + statuses.count("FAILED"),
+        "failed":    statuses.count("FAILED"),
         "compliance_score": compliance_score,
     }
 

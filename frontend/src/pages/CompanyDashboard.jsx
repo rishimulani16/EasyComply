@@ -14,12 +14,11 @@ function StatusBadge({ status }) {
     const cfg = {
         COMPLETED: 'bg-emerald-900/60 text-emerald-300 border-emerald-700',
         PENDING: 'bg-yellow-900/60  text-yellow-300  border-yellow-700',
-        OVERDUE: 'bg-red-900/60     text-red-300     border-red-700',
         'OVERDUE-PASS': 'bg-amber-900/60 text-amber-300   border-amber-700',
         FAILED: 'bg-red-900/60     text-red-300     border-red-700',
     };
     const icons = {
-        COMPLETED: '✅', PENDING: '⏳', OVERDUE: '❌', 'OVERDUE-PASS': '🟡', FAILED: '❌',
+        COMPLETED: '✅', PENDING: '⏳', 'OVERDUE-PASS': '🟡', FAILED: '❌',
     };
     return (
         <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-xs font-medium ${cfg[status] ?? 'bg-slate-700 text-slate-300 border-slate-600'}`}>
@@ -196,7 +195,7 @@ export default function CompanyDashboard() {
                         <StatCard label="Total Rules" value={summary.total ?? 0} icon="📋" colorClass="text-blue-400" />
                         <StatCard label="Completed" value={summary.completed ?? 0} icon="✅" colorClass="text-emerald-400" />
                         <StatCard label="Pending" value={summary.pending ?? 0} icon="⏳" colorClass="text-yellow-400" />
-                        <StatCard label="Overdue" value={summary.overdue ?? 0} icon="❌" colorClass="text-red-400" />
+                        <StatCard label="Failed" value={summary.failed ?? 0} icon="❌" colorClass="text-red-400" />
                     </div>
                 </div>
 
@@ -256,19 +255,19 @@ export default function CompanyDashboard() {
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr className="text-slate-400 text-xs uppercase tracking-wider bg-slate-800/60">
-                                        {['Rule Name', 'Frequency', 'Due Date', 'Status', 'Action'].map(h => (
+                                        {['Rule Name', 'Frequency', 'Due Date', 'Penalty Impact', 'Status', 'Action'].map(h => (
                                             <th key={h} className="px-5 py-3 text-left font-medium">{h}</th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700/40">
                                     {rows.map((row) => {
-                                        const isOverdue = row.status === 'OVERDUE' || row.status === 'FAILED';
-                                        const isDue7Days = row.due_date && !isOverdue && daysUntil(row.due_date) < 7;
+                                        const isFailed = row.status === 'FAILED';
+                                        const isDue7Days = row.due_date && !isFailed && daysUntil(row.due_date) < 7;
                                         return (
                                             <tr key={row.calendar_id}
                                                 className={`transition-colors hover:bg-slate-800/50
-                                                    ${isOverdue ? 'bg-red-900/10' : isDue7Days ? 'bg-yellow-900/10' : ''}`}
+                                                    ${isFailed ? 'bg-red-900/10' : isDue7Days ? 'bg-yellow-900/10' : ''}`}
                                             >
                                                 <td className="px-5 py-4">
                                                     <p className="font-medium text-white max-w-[220px] truncate" title={row.rule_name}>{row.rule_name}</p>
@@ -278,9 +277,25 @@ export default function CompanyDashboard() {
                                                 </td>
                                                 <td className="px-5 py-4 text-slate-300">{freqLabel(row.frequency_months)}</td>
                                                 <td className="px-5 py-4">
-                                                    <span className={`font-medium ${isOverdue ? 'text-red-400' : isDue7Days ? 'text-yellow-400' : 'text-slate-300'}`}>
+                                                    <span className={`font-medium ${isFailed ? 'text-red-400' : isDue7Days ? 'text-yellow-400' : 'text-slate-300'}`}>
                                                         {formatDate(row.due_date)}
                                                     </span>
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    {(() => {
+                                                        const impact = row.penalty_impact;
+                                                        const styles = {
+                                                            Imprisonment: 'bg-red-900/50 text-red-300 border-red-700',
+                                                            High: 'bg-orange-900/50 text-orange-300 border-orange-700',
+                                                            Medium: 'bg-yellow-900/50 text-yellow-300 border-yellow-700',
+                                                            Low: 'bg-slate-700/50 text-slate-300 border-slate-600',
+                                                        };
+                                                        return impact ? (
+                                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full border text-xs font-medium ${styles[impact] ?? 'bg-slate-700 text-slate-300 border-slate-600'}`}>
+                                                                {impact}
+                                                            </span>
+                                                        ) : <span className="text-slate-500">—</span>;
+                                                    })()}
                                                 </td>
                                                 <td className="px-5 py-4"><StatusBadge status={row.status} /></td>
                                                 <td className="px-5 py-4">
