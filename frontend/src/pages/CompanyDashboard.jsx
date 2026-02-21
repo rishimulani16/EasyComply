@@ -63,6 +63,53 @@ function StatCard({ label, value, colorClass, icon }) {
     );
 }
 
+// ── Compliance Score Ring ──────────────────────────────────────────────────
+function ScoreRing({ score }) {
+    const radius = 54;
+    const stroke = 8;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (score / 100) * circumference;
+
+    // Color coding: green ≥75, yellow 40-74, red <40
+    let ringColor, textColor, label, bgGlow;
+    if (score >= 75) {
+        ringColor = '#10b981'; textColor = 'text-emerald-400'; label = 'Good Standing'; bgGlow = 'shadow-emerald-500/10';
+    } else if (score >= 40) {
+        ringColor = '#f59e0b'; textColor = 'text-yellow-400'; label = 'Needs Attention'; bgGlow = 'shadow-yellow-500/10';
+    } else {
+        ringColor = '#ef4444'; textColor = 'text-red-400'; label = 'Critical'; bgGlow = 'shadow-red-500/10';
+    }
+
+    return (
+        <div className={`bg-slate-800/60 border border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 shadow-lg ${bgGlow}`}>
+            <p className="text-slate-400 text-xs uppercase tracking-wide font-medium">Compliance Score</p>
+            <div className="relative w-32 h-32">
+                <svg className="w-full h-full -rotate-90" viewBox="0 0 128 128">
+                    {/* Background track */}
+                    <circle cx="64" cy="64" r={radius} fill="none" stroke="#334155" strokeWidth={stroke} />
+                    {/* Progress arc */}
+                    <circle
+                        cx="64" cy="64" r={radius} fill="none"
+                        stroke={ringColor} strokeWidth={stroke}
+                        strokeLinecap="round"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={offset}
+                        style={{ transition: 'stroke-dashoffset 0.8s ease-out' }}
+                    />
+                </svg>
+                {/* Centre text */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className={`text-3xl font-bold ${textColor}`}>{score}%</span>
+                </div>
+            </div>
+            <span className={`text-xs font-semibold ${textColor}`}>{label}</span>
+            <p className="text-[10px] text-slate-500 text-center leading-tight mt-0.5">
+                Weighted by penalty impact
+            </p>
+        </div>
+    );
+}
+
 export default function CompanyDashboard() {
     const navigate = useNavigate();
     const [data, setData] = useState(null);
@@ -139,12 +186,18 @@ export default function CompanyDashboard() {
 
             <main className="max-w-7xl mx-auto px-6 py-8">
 
-                {/* Summary stat cards */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    <StatCard label="Total Rules" value={summary.total ?? 0} icon="📋" colorClass="text-blue-400" />
-                    <StatCard label="Completed" value={summary.completed ?? 0} icon="✅" colorClass="text-emerald-400" />
-                    <StatCard label="Pending" value={summary.pending ?? 0} icon="⏳" colorClass="text-yellow-400" />
-                    <StatCard label="Overdue" value={summary.overdue ?? 0} icon="❌" colorClass="text-red-400" />
+                {/* Summary: Score ring + stat cards */}
+                <div className="flex flex-col md:flex-row gap-4 mb-8">
+                    {/* Score ring */}
+                    <ScoreRing score={summary.compliance_score ?? 0} />
+
+                    {/* Stat cards */}
+                    <div className="grid grid-cols-2 gap-4 flex-1">
+                        <StatCard label="Total Rules" value={summary.total ?? 0} icon="📋" colorClass="text-blue-400" />
+                        <StatCard label="Completed" value={summary.completed ?? 0} icon="✅" colorClass="text-emerald-400" />
+                        <StatCard label="Pending" value={summary.pending ?? 0} icon="⏳" colorClass="text-yellow-400" />
+                        <StatCard label="Overdue" value={summary.overdue ?? 0} icon="❌" colorClass="text-red-400" />
+                    </div>
                 </div>
 
                 {actionError && (

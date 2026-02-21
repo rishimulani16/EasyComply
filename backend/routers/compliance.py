@@ -164,11 +164,29 @@ def company_dashboard(
 
     # Build summary counts
     statuses = [r["status"] for r in rows_to_return]
+
+    # Weighted compliance score
+    IMPACT_WEIGHTS = {"Imprisonment": 40, "High": 30, "Medium": 20, "Low": 10}
+    total_weight = sum(
+        IMPACT_WEIGHTS.get(r["penalty_impact"], 10) for r in rows_to_return
+    )
+    completed_weight = sum(
+        IMPACT_WEIGHTS.get(r["penalty_impact"], 10)
+        for r in rows_to_return
+        if r["status"] in ("COMPLETED", "OVERDUE-PASS")
+    )
+    compliance_score = (
+        round((completed_weight / total_weight) * 100, 1)
+        if total_weight > 0
+        else 0
+    )
+
     summary = {
         "total":     len(statuses),
         "completed": statuses.count("COMPLETED") + statuses.count("OVERDUE-PASS"),
         "pending":   statuses.count("PENDING"),
         "overdue":   statuses.count("OVERDUE") + statuses.count("FAILED"),
+        "compliance_score": compliance_score,
     }
 
     return {"summary": summary, "rules": rows_to_return}
