@@ -118,7 +118,7 @@ export default function CompanyDashboard() {
     const [markDoneModal, setMarkDoneModal] = useState({ open: false, calendarId: null, ruleName: '' });
     const [actionError, setActionError] = useState('');
     // ── Sort state: 'dueDate' | 'penaltyImpact' ──────────────────────────
-    const [sortBy, setSortBy] = useState('dueDate');
+    const [sortBy, setSortBy] = useState('renewalDate');
 
     const fetchDashboard = useCallback(() => {
         setLoading(true);
@@ -173,7 +173,7 @@ export default function CompanyDashboard() {
                 return aRank - bRank;
             });
         } else {
-            // dueDate: nearest first; null dates go to bottom
+            // renewalDate: nearest renewal/due date first; null dates go to bottom
             copy.sort((a, b) => {
                 const aD = a.due_date ? new Date(a.due_date + 'T00:00:00').getTime() : Infinity;
                 const bD = b.due_date ? new Date(b.due_date + 'T00:00:00').getTime() : Infinity;
@@ -196,7 +196,7 @@ export default function CompanyDashboard() {
                     onChange={(e) => setSortBy(e.target.value)}
                     className="appearance-none bg-transparent text-xs font-semibold text-slate-200 cursor-pointer outline-none pr-5"
                 >
-                    <option value="dueDate" className="bg-slate-800">Due Date</option>
+                    <option value="renewalDate" className="bg-slate-800">Renewal Date</option>
                     <option value="penaltyImpact" className="bg-slate-800">Penalty Impact</option>
                 </select>
                 <svg className="w-3 h-3 text-slate-400 pointer-events-none absolute right-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -302,7 +302,7 @@ export default function CompanyDashboard() {
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr className="text-slate-400 text-xs uppercase tracking-wider bg-slate-800/60">
-                                        {['Rule Name', 'Frequency', 'Due Date', 'Penalty Impact', 'Status', 'Action'].map(h => (
+                                        {['Rule Name', 'Frequency', 'Renewal Date', 'Penalty Impact', 'Status', 'Action'].map(h => (
                                             <th key={h} className="px-5 py-3 text-left font-medium">{h}</th>
                                         ))}
                                     </tr>
