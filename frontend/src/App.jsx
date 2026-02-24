@@ -3,6 +3,7 @@ import LoginPage from './pages/LoginPage';
 import DeveloperDashboard from './pages/DeveloperDashboard';
 import CompanyDashboard from './pages/CompanyDashboard';
 import CompanySignup from './pages/CompanySignup';
+import AuditorDashboard from './pages/AuditorDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 
 export default function App() {
@@ -29,6 +30,16 @@ export default function App() {
           element={
             <ProtectedRoute role="company">
               <CompanyDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Protected — Auditor only */}
+        <Route
+          path="/auditor"
+          element={
+            <ProtectedRoute role="auditor">
+              <AuditorDashboard />
             </ProtectedRoute>
           }
         />

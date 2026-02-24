@@ -6,7 +6,7 @@ Registers all routers and configures the FastAPI application.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import auth, developer, company, compliance
+from routers import auth, developer, company, compliance, auditor
 
 # ---------------------------------------------------------------------------
 # App instance
@@ -39,6 +39,7 @@ app.include_router(auth.router)
 app.include_router(developer.router)
 app.include_router(company.router)
 app.include_router(compliance.router)
+app.include_router(auditor.router)
 
 
 # ---------------------------------------------------------------------------

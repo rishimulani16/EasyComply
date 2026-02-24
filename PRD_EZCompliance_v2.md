@@ -108,7 +108,7 @@ CREATE TABLE users (
     user_id       SERIAL PRIMARY KEY,
     email         VARCHAR(255) UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role          VARCHAR(20) CHECK (role IN ('developer', 'company', 'auditor')),
+    role         VARCHAR(20) CHECK (role IN ('developer', 'company', 'auditor')),
     company_id    INT REFERENCES companies(company_id),
     created_at    TIMESTAMP DEFAULT NOW()
 );
@@ -320,7 +320,7 @@ URL auto-expires — cannot be shared permanently
 ```
 AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
-AWS_BUCKET_NAME=ez-compliance-docs
+AWS_BUCKET_NAME=EasyComply
 AWS_REGION=ap-south-1
 ```
 

@@ -119,6 +119,36 @@ export default function CompanyDashboard() {
     const [actionError, setActionError] = useState('');
     // ── Sort state: 'dueDate' | 'penaltyImpact' ──────────────────────────
     const [sortBy, setSortBy] = useState('renewalDate');
+    // ── Invite Auditor modal state ────────────────────────────────────────
+    const [inviteModal, setInviteModal] = useState(false);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [invitePassword, setInvitePassword] = useState('');
+    const [inviteLoading, setInviteLoading] = useState(false);
+    const [inviteError, setInviteError] = useState('');
+    const [inviteSuccess, setInviteSuccess] = useState('');
+
+    const handleInviteAuditor = async () => {
+        if (!inviteEmail.trim() || !invitePassword.trim()) {
+            setInviteError('Email and password are required.');
+            return;
+        }
+        setInviteLoading(true);
+        setInviteError('');
+        setInviteSuccess('');
+        try {
+            const res = await api.post('/company/invite-auditor', {
+                email: inviteEmail.trim(),
+                password: invitePassword,
+            });
+            setInviteSuccess(`✅ Auditor account created for ${res.data.email}. They can now log in.`);
+            setInviteEmail('');
+            setInvitePassword('');
+        } catch (err) {
+            setInviteError(err.response?.data?.detail || 'Failed to invite auditor.');
+        } finally {
+            setInviteLoading(false);
+        }
+    };
 
     const fetchDashboard = useCallback(() => {
         setLoading(true);
@@ -220,15 +250,122 @@ export default function CompanyDashboard() {
                     </div>
                     <span className="font-bold text-lg">EZ Compliance — Company Dashboard</span>
                 </div>
-                <button onClick={handleLogout}
-                    className="text-slate-400 hover:text-white text-sm transition-colors flex items-center gap-1.5">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    Logout
-                </button>
+                <div className="flex items-center gap-3">
+                    {/* Invite Auditor button */}
+                    <button
+                        onClick={() => { setInviteModal(true); setInviteError(''); setInviteSuccess(''); }}
+                        className="flex items-center gap-2 px-3.5 py-2 bg-violet-700/30 hover:bg-violet-700/50 border border-violet-600/50 text-violet-300 text-sm font-semibold rounded-xl transition-colors"
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                        </svg>
+                        Invite Auditor
+                    </button>
+
+                    {/* Logout */}
+                    <button onClick={handleLogout}
+                        className="text-slate-400 hover:text-white text-sm transition-colors flex items-center gap-1.5">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        Logout
+                    </button>
+                </div>
             </nav>
+
+            {/* ── Invite Auditor Modal ───────────────────────────────────────── */}
+            {inviteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+                        {/* Header */}
+                        <div className="px-6 py-4 bg-violet-900/30 border-b border-violet-800/40 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 bg-violet-700 rounded-xl flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                            d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 className="font-bold text-white">Invite Auditor</h2>
+                                    <p className="text-xs text-violet-300 mt-0.5">Create a read-only auditor account for your company</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setInviteModal(false)} className="text-slate-400 hover:text-white transition-colors">
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Form */}
+                        <div className="px-6 py-5 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-1.5">Auditor Email</label>
+                                <input
+                                    type="email"
+                                    value={inviteEmail}
+                                    onChange={(e) => setInviteEmail(e.target.value)}
+                                    placeholder="auditor@company.com"
+                                    className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm
+                                        focus:outline-none focus:ring-2 focus:ring-violet-500 transition"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-1.5">Initial Password</label>
+                                <input
+                                    type="password"
+                                    value={invitePassword}
+                                    onChange={(e) => setInvitePassword(e.target.value)}
+                                    placeholder="Set a temporary password"
+                                    className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm
+                                        focus:outline-none focus:ring-2 focus:ring-violet-500 transition"
+                                />
+                            </div>
+
+                            {inviteError && (
+                                <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">{inviteError}</div>
+                            )}
+                            {inviteSuccess && (
+                                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3 text-emerald-400 text-sm">{inviteSuccess}</div>
+                            )}
+
+                            <p className="text-xs text-slate-500">
+                                The auditor will be able to log in at the main login page and will see a <strong className="text-slate-400">read-only view</strong> of your company's compliance dashboard.
+                            </p>
+
+                            <div className="flex gap-3 pt-1">
+                                <button
+                                    onClick={() => setInviteModal(false)}
+                                    className="flex-1 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-semibold rounded-xl transition-colors"
+                                >
+                                    {inviteSuccess ? 'Close' : 'Cancel'}
+                                </button>
+                                {!inviteSuccess && (
+                                    <button
+                                        onClick={handleInviteAuditor}
+                                        disabled={inviteLoading}
+                                        className="flex-1 px-4 py-2.5 bg-violet-700 hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed
+                                            text-white text-sm font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        {inviteLoading ? (
+                                            <>
+                                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                                </svg>
+                                                Creating…
+                                            </>
+                                        ) : 'Send Invite'}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <main className="max-w-7xl mx-auto px-6 py-8">
 

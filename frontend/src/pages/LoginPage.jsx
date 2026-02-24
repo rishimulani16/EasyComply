@@ -30,6 +30,8 @@ export default function LoginPage() {
                 navigate('/developer');
             } else if (decoded.role === 'company') {
                 navigate('/company');
+            } else if (decoded.role === 'auditor') {
+                navigate('/auditor');
             } else {
                 setServerError('Unrecognised role in token.');
             }

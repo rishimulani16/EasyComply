@@ -267,3 +267,96 @@ def company_signup(body: SignupRequest, db: Session = Depends(get_db)):
 
 # GET /company/dashboard is implemented in routers/compliance.py
 # with full join query and summary counts.
+
+
+# ---------------------------------------------------------------------------
+# POST /company/invite-auditor
+# Company Admin creates an auditor account linked to their company.
+# ---------------------------------------------------------------------------
+
+from pydantic import BaseModel as _BaseModel, EmailStr as _EmailStr
+
+class InviteAuditorRequest(_BaseModel):
+    email: _EmailStr
+    password: str
+
+
+@router.post(
+    "/invite-auditor",
+    status_code=201,
+    summary="Invite an auditor — creates a user with role='auditor' linked to this company",
+)
+def invite_auditor(
+    body: InviteAuditorRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_company),
+):
+    """
+    Creates a new user with role='auditor' linked to the calling company.
+    The auditor can then log in with these credentials and access /audit/dashboard.
+    """
+    # Guard: duplicate email
+    existing = db.query(User).filter(User.email == body.email).first()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email already exists.",
+        )
+
+    hashed_pw = pwd_context.hash(body.password)
+    auditor = User(
+        email=body.email,
+        password_hash=hashed_pw,
+        role="auditor",
+        company_id=current_user["company_id"],
+    )
+    db.add(auditor)
+    db.commit()
+    db.refresh(auditor)
+
+    return {
+        "user_id":    auditor.user_id,
+        "email":      auditor.email,
+        "role":       "auditor",
+        "company_id": auditor.company_id,
+        "message":    "Auditor account created. They can now log in at /.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# PATCH /company/flag/{flag_id}/resolve
+# Company Admin resolves an auditor's flag.
+# ---------------------------------------------------------------------------
+
+from models.models import AuditFlag as _AuditFlag
+
+
+@router.patch(
+    "/flag/{flag_id}/resolve",
+    summary="Resolve an audit flag raised by an auditor",
+)
+def resolve_flag(
+    flag_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_company),
+):
+    flag = db.query(_AuditFlag).filter(_AuditFlag.flag_id == flag_id).first()
+
+    if not flag:
+        raise HTTPException(status_code=404, detail=f"Flag {flag_id} not found.")
+    if flag.company_id != current_user["company_id"]:
+        raise HTTPException(status_code=403, detail="Not authorised to resolve this flag.")
+    if flag.resolved:
+        raise HTTPException(status_code=400, detail="Flag is already resolved.")
+
+    flag.resolved    = True
+    flag.resolved_by = current_user["email"]
+    flag.resolved_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return {
+        "flag_id":     flag.flag_id,
+        "resolved":    True,
+        "resolved_by": flag.resolved_by,
+        "resolved_at": flag.resolved_at.isoformat(),
+    }

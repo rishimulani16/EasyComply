@@ -98,3 +98,28 @@ def require_company(current_user: dict = Depends(get_current_user)) -> dict:
             detail="Access restricted to Company Admin accounts.",
         )
     return current_user
+
+
+def require_auditor(current_user: dict = Depends(get_current_user)) -> dict:
+    """
+    Guard dependency — only allows users with role='auditor'.
+    """
+    if current_user["role"] != "auditor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted to Auditor accounts.",
+        )
+    return current_user
+
+
+def require_company_or_auditor(current_user: dict = Depends(get_current_user)) -> dict:
+    """
+    Guard dependency — allows both Company Admin and Auditor roles.
+    Used for shared read endpoints (flags list, document download, etc.).
+    """
+    if current_user["role"] not in ("company", "auditor"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted to Company Admin or Auditor accounts.",
+        )
+    return current_user
