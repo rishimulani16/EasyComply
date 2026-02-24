@@ -1,0 +1,4 @@
+.agent/
+.gsd/
+.planning/
+gsd-file-manifest.json
